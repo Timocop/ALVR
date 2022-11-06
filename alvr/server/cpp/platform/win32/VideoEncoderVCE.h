@@ -8,53 +8,45 @@
 #include "amf/common/AMFSTL.h"
 #include "amf/common/Thread.h"
 
-typedef amf::AMFData * AMFDataPtr;
-typedef std::function<void (AMFDataPtr)> AMFDataReceiver;
+typedef std::function<void (amf::AMFData *)> AMFTextureReceiver;
 
-class AMFPipeline;
-
-class AMFPipe {
+class AMFTextureEncoder {
 public:
-	AMFPipe(amf::AMFComponentPtr src, AMFDataReceiver receiver);
-	virtual ~AMFPipe();
+	AMFTextureEncoder(const amf::AMFContextPtr &amfContext
+		, int codec, int width, int height, int refreshRate, int bitrateInMbits
+		, amf::AMF_SURFACE_FORMAT inputFormat
+		, AMFTextureReceiver receiver);
+	~AMFTextureEncoder();
 
-	void doPassthrough();
-protected:
-	amf::AMFComponentPtr m_amfComponentSrc;
-	AMFDataReceiver m_receiver;
-};
-
-typedef AMFPipe* AMFPipePtr;
-
-class AMFSolidPipe : public AMFPipe {
-public:
-	AMFSolidPipe(amf::AMFComponentPtr src, amf::AMFComponentPtr dst);
-protected:
-	void Passthrough(AMFDataPtr);
-
-	amf::AMFComponentPtr m_amfComponentDst;
-};
-
-class AMFPipeline {
-public:
-	AMFPipeline();
-	~AMFPipeline();
-
-	void Connect(AMFPipePtr pipe);
 	void Start();
+	void Shutdown();
+	void Submit(amf::AMFData *data);
+	amf::AMFComponentPtr Get();
+private:
+	amf::AMFComponentPtr m_amfEncoder;
+	std::thread *m_thread = NULL;
+	AMFTextureReceiver m_receiver;
+
 	void Run();
-protected:
-	std::thread *m_thread;
-	std::vector<AMFPipePtr> m_pipes;
-	bool isRunning;
 };
 
-typedef AMFPipeline* AMFPipelinePtr;
+class AMFTextureConverter {
+public:
+	AMFTextureConverter(const amf::AMFContextPtr &amfContext
+		, int width, int height
+		, amf::AMF_SURFACE_FORMAT inputFormat, amf::AMF_SURFACE_FORMAT outputFormat
+		, AMFTextureReceiver receiver);
+	~AMFTextureConverter();
 
-enum EncoderQualityPreset {
-	QUALITY = 0,
-	BALANCED = 1,
-	SPEED = 2
+	void Start();
+	void Shutdown();
+	void Submit(amf::AMFData *data);
+private:
+	amf::AMFComponentPtr m_amfConverter;
+	std::thread *m_thread = NULL;
+	AMFTextureReceiver m_receiver;
+
+	void Run();
 };
 
 // Video encoder for AMD VCE.
@@ -70,37 +62,25 @@ public:
 	void Shutdown();
 
 	void Transmit(ID3D11Texture2D *pTexture, uint64_t presentationTime, uint64_t targetTimestampNs, bool insertIDR);
-	void Receive(AMFDataPtr data);
-private:	
+	void Receive(amf::AMFData *data);
+private:
+	static const amf::AMF_SURFACE_FORMAT CONVERTER_INPUT_FORMAT = amf::AMF_SURFACE_RGBA;
+	static const amf::AMF_SURFACE_FORMAT ENCODER_INPUT_FORMAT = amf::AMF_SURFACE_RGBA;// amf::AMF_SURFACE_NV12;
+	
 	static const wchar_t *START_TIME_PROPERTY;
 	static const wchar_t *FRAME_INDEX_PROPERTY;
 
 	const uint64_t MILLISEC_TIME = 10000;
 	const uint64_t MICROSEC_TIME = 10;
 
-	amf::AMFComponentPtr MakeConverter(
-		amf::AMF_SURFACE_FORMAT inputFormat, int width, int height, amf::AMF_SURFACE_FORMAT outputFormat
-	);
-	amf::AMFComponentPtr MakePreprocessor(
-		amf::AMF_SURFACE_FORMAT inputFormat, int width, int height
-	);
-	amf::AMFComponentPtr MakeEncoder(
-		amf::AMF_SURFACE_FORMAT inputFormat, int width, int height, int codec, int refreshRate, int bitrateInMbits
-	);
 	amf::AMFContextPtr m_amfContext;
-	AMFPipelinePtr m_pipeline;
-	std::vector<amf::AMFComponentPtr> m_amfComponents;
+	std::shared_ptr<AMFTextureEncoder> m_encoder;
+	std::shared_ptr<AMFTextureConverter> m_converter;
 
 	std::ofstream fpOut;
 
 	std::shared_ptr<CD3DRender> m_d3dRender;
 	std::shared_ptr<ClientConnection> m_Listener;
-
-	bool m_use10bit;
-	bool m_usePreProc;
-	uint32_t m_preProcSigma;
-	uint32_t m_preProcTor;
-	EncoderQualityPreset m_encoderQualityPreset;
 
 	int m_codec;
 	int m_refreshRate;
