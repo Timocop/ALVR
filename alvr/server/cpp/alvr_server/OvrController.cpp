@@ -668,6 +668,19 @@ bool OvrController::onPoseUpdate(float predictionS,
         return false;
     }
 
+    if (!hand.enabled) {
+        // Ignore processing when controllers are not being moved.
+        // Fixes SteamVR controllers being teleported when controllers go standby.
+        if(abs(motion.linearVelocity[0]) == 0.f &&
+                abs(motion.linearVelocity[1]) == 0.f &&
+                abs(motion.linearVelocity[2]) == 0.f &&
+                abs(motion.angularVelocity[0]) == 0.f &&
+                abs(motion.angularVelocity[1]) == 0.f &&
+                abs(motion.angularVelocity[2]) == 0.f) {
+            return false;
+        }
+    }
+
     auto pose = vr::DriverPose_t{};
 
     pose.poseIsValid = true;
