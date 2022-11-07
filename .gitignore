@@ -64,3 +64,4 @@ node_modules
 
 alvr_launcher_mutex
 BUILD.bat
+BUILD_APK.bat
