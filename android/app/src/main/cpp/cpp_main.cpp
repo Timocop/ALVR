@@ -640,6 +640,11 @@ void eventsThread() {
                             memcpy(motion.angular_velocity, &tracking.HeadPose.AngularVelocity, 4 * 3);
 
                             motionVec.push_back(motion);
+                        } else {
+                            // Send empty motion vectors for button updates.
+                            AlvrDeviceMotion motion = {};
+                            motion.device_id = handID;
+                            motionVec.push_back(motion);
                         }
                     }
                 } else if (capabilitiesHeader.Type == ovrControllerType_Hand) {
