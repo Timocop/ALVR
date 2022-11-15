@@ -668,10 +668,14 @@ bool OvrController::onPoseUpdate(float predictionS,
         return false;
     }
 
-    bool motionValid = true;
+    // Message from client, tracking is not valid.
+    bool motionValid = !(motion.position[0] == FLT_MAX &&
+                        motion.position[1] == FLT_MAX &&
+                        motion.position[2] == FLT_MAX);
 
     if (!hand.enabled) {
         // Ignore pose update when controllers are not being moved.
+        // Workaround for non-compatible quest clients.
         if(abs(motion.linearVelocity[0]) == 0.f &&
                 abs(motion.linearVelocity[1]) == 0.f &&
                 abs(motion.linearVelocity[2]) == 0.f &&
@@ -682,37 +686,37 @@ bool OvrController::onPoseUpdate(float predictionS,
         }
     }
 
-    auto pose = vr::DriverPose_t{};
-
-    pose.poseIsValid = true;
-    pose.result = vr::TrackingResult_Running_OK;
-    pose.deviceIsConnected = true;
-
-    double rightHandSignFlip = this->device_id == LEFT_HAND_ID ? 1. : -1.;
-
-    // controller is rotated and translated, prepare pose
-    double rotation[3] = {
-        Settings::Instance().m_leftControllerRotationOffset[1] * DEG_TO_RAD * rightHandSignFlip,
-        Settings::Instance().m_leftControllerRotationOffset[2] * DEG_TO_RAD * rightHandSignFlip,
-        Settings::Instance().m_leftControllerRotationOffset[0] * DEG_TO_RAD,
-    };
-    pose.qDriverFromHeadRotation = EulerAngleToQuaternion(rotation);
-
-    vr::HmdVector3d_t offset;
-    offset.v[0] = Settings::Instance().m_leftControllerPositionOffset[0] * rightHandSignFlip;
-    offset.v[1] = Settings::Instance().m_leftControllerPositionOffset[1];
-    offset.v[2] = Settings::Instance().m_leftControllerPositionOffset[2];
-
-    vr::HmdVector3d_t offsetRes =
-        vrmath::quaternionRotateVector(pose.qDriverFromHeadRotation, offset, false);
-
-    pose.vecDriverFromHeadTranslation[0] = offsetRes.v[0];
-    pose.vecDriverFromHeadTranslation[1] = offsetRes.v[1];
-    pose.vecDriverFromHeadTranslation[2] = offsetRes.v[2];
-
-    pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
-
     if(motionValid) {
+        auto pose = vr::DriverPose_t{};
+
+        pose.poseIsValid = true;
+        pose.result = vr::TrackingResult_Running_OK;
+        pose.deviceIsConnected = true;
+
+        double rightHandSignFlip = this->device_id == LEFT_HAND_ID ? 1. : -1.;
+
+        // controller is rotated and translated, prepare pose
+        double rotation[3] = {
+            Settings::Instance().m_leftControllerRotationOffset[1] * DEG_TO_RAD * rightHandSignFlip,
+            Settings::Instance().m_leftControllerRotationOffset[2] * DEG_TO_RAD * rightHandSignFlip,
+            Settings::Instance().m_leftControllerRotationOffset[0] * DEG_TO_RAD,
+        };
+        pose.qDriverFromHeadRotation = EulerAngleToQuaternion(rotation);
+
+        vr::HmdVector3d_t offset;
+        offset.v[0] = Settings::Instance().m_leftControllerPositionOffset[0] * rightHandSignFlip;
+        offset.v[1] = Settings::Instance().m_leftControllerPositionOffset[1];
+        offset.v[2] = Settings::Instance().m_leftControllerPositionOffset[2];
+
+        vr::HmdVector3d_t offsetRes =
+            vrmath::quaternionRotateVector(pose.qDriverFromHeadRotation, offset, false);
+
+        pose.vecDriverFromHeadTranslation[0] = offsetRes.v[0];
+        pose.vecDriverFromHeadTranslation[1] = offsetRes.v[1];
+        pose.vecDriverFromHeadTranslation[2] = offsetRes.v[2];
+
+        pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
+
         if (hand.enabled) {
             vr::HmdQuaternion_t rootBoneRot = HmdQuaternion_Init(
                 motion.orientation.w, motion.orientation.x, motion.orientation.y, motion.orientation.z);
@@ -775,18 +779,9 @@ bool OvrController::onPoseUpdate(float predictionS,
         pose.poseTimeOffset = predictionS;
 
         m_pose = pose;
-    } else {
-        // Still try to update pose, so controllers move with the hmd
-        pose.qRotation = m_pose.qRotation;
-        pose.vecPosition[0] = m_pose.vecPosition[0];
-        pose.vecPosition[1] = m_pose.vecPosition[1];
-        pose.vecPosition[2] = m_pose.vecPosition[2];
-        pose.vecVelocity[0] = 0.f;
-        pose.vecVelocity[1] = 0.f;
-        pose.vecVelocity[2] = 0.f;
-        pose.vecAngularVelocity[0] = 0.f;
-        pose.vecAngularVelocity[1] = 0.f;
-        pose.vecAngularVelocity[2] = 0.f;
+
+        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
+            this->object_id, pose, sizeof(vr::DriverPose_t));
     }
 
     if (hand.enabled) {
@@ -1096,9 +1091,6 @@ bool OvrController::onPoseUpdate(float predictionS,
         vr::VRDriverInput()->UpdateScalarComponent(m_handles[ALVR_INPUT_FINGER_RING], rotRing, 0.0);
         vr::VRDriverInput()->UpdateScalarComponent(
             m_handles[ALVR_INPUT_FINGER_PINKY], rotPinky, 0.0);
-
-        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
-            this->object_id, pose, sizeof(vr::DriverPose_t));
     } else {
         switch (Settings::Instance().m_controllerMode) {
         case 3:
@@ -1412,9 +1404,6 @@ bool OvrController::onPoseUpdate(float predictionS,
             }
             break;
         }
-
-        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
-            this->object_id, pose, sizeof(vr::DriverPose_t));
     }
 
     return false;

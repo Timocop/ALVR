@@ -641,9 +641,13 @@ void eventsThread() {
 
                             motionVec.push_back(motion);
                         } else {
-                            // Send empty motion vectors for button updates.
+                            // Tell the server the current position in invalid by setting position to FLT_MAX.
+                            // We need this to update input even if current tracking is not valid.
                             AlvrDeviceMotion motion = {};
                             motion.device_id = handID;
+                            motion.position[0] = FLT_MAX; 
+                            motion.position[1] = FLT_MAX; 
+                            motion.position[2] = FLT_MAX; 
                             motionVec.push_back(motion);
                         }
                     }
