@@ -193,7 +193,6 @@ void *CppEntryPoint(const char *interface_name, int *return_code) {
 }
 
 void InitializeStreaming() {
-    // set correct client ip
     Settings::Instance().Load();
 
     if (g_driver_provider.hmd) {
@@ -202,7 +201,9 @@ void InitializeStreaming() {
 }
 
 void DeinitializeStreaming() {
-    // nothing to do
+    if (g_driver_provider.hmd) {
+        g_driver_provider.hmd->StopStreaming();
+    }
 }
 
 void RequestIDR() {

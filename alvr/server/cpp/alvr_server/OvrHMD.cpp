@@ -192,8 +192,13 @@ vr::EVRInitError OvrHmd::Activate(vr::TrackedDeviceIndex_t unObjectId) {
 #endif
 
     // Set battery as true
-    vr::VRProperties()->SetBoolProperty(
+    vr_properties->SetBoolProperty(
         this->prop_container, vr::Prop_DeviceProvidesBatteryStatus_Bool, true);
+
+    // Proximity sensor
+    vr::VRProperties()->SetBoolProperty(
+        this->prop_container, vr::Prop_ContainsProximitySensor_Bool, true);
+    vr::VRDriverInput()->CreateBooleanComponent(this->prop_container, "/proximity", &m_proximity);
 
 #ifdef _WIN32
     float originalIPD =
@@ -382,9 +387,15 @@ void OvrHmd::StartStreaming() {
         m_encoder = std::make_shared<CEncoder>(m_Listener, m_poseHistory);
         m_encoder->Start();
 #endif
+
+        vr::VRDriverInput()->UpdateBooleanComponent(m_proximity, true, 0.0);
     }
 
     m_streamComponentsInitialized = true;
+}
+
+void OvrHmd::StopStreaming() {
+    vr::VRDriverInput()->UpdateBooleanComponent(m_proximity, false, 0.0);
 }
 
 void OvrHmd::SetViewsConfig(ViewsConfigData config) {
