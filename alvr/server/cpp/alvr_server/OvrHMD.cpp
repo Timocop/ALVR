@@ -192,7 +192,7 @@ vr::EVRInitError OvrHmd::Activate(vr::TrackedDeviceIndex_t unObjectId) {
 #endif
 
     // Set battery as true
-    vr_properties->SetBoolProperty(
+    vr::VRProperties()->SetBoolProperty(
         this->prop_container, vr::Prop_DeviceProvidesBatteryStatus_Bool, true);
 
     // Use dummy proximity sensor
