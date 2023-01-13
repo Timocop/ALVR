@@ -37,6 +37,8 @@
 
 #include <timeapi.h>
 #include <windows.h>
+#include <mmsystem.h>
+
 //----------------------------------------------------------------------------------------
 // threading
 //----------------------------------------------------------------------------------------
@@ -243,7 +245,46 @@ void AMF_CDECL_CALL amf_sleep(amf_ulong delay)
 #if defined(METRO_APP)
     Concurrency::wait(delay);
 #else
-    Sleep(delay);
+    static bool isSupported = true;
+
+	if (isSupported)
+	{
+        HANDLE timer = CreateWaitableTimerEx(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+        if (timer != NULL)
+        {
+            LARGE_INTEGER liDueTime;
+            // Convert from microseconds to 100 of ns, and negative for relative time.
+            liDueTime.QuadPart = -(delay * 1000 * 10);
+
+            if (!SetWaitableTimer(timer, &liDueTime, 0, NULL, NULL, 0))
+            {
+                return;
+            }
+
+            WaitForSingleObject(timer, INFINITE);
+            CloseHandle(timer);
+            return;
+        }
+        else
+        {
+            switch (GetLastError())
+            {
+            case ERROR_INVALID_PARAMETER:
+            {
+                // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION is not supported
+                isSupported = false;
+                break;
+            }
+            }
+        }
+	}
+
+    if(!isSupported)
+    {
+        timeBeginPeriod(delay);
+        Sleep(delay);
+        timeEndPeriod(delay);
+    }
 #endif
 }
 //----------------------------------------------------------------------------------------

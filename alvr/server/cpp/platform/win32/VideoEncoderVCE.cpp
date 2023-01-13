@@ -144,7 +144,7 @@ void AMFTextureEncoder::Run()
 		}
 		else
 		{
-			Sleep(1);
+			amf_sleep(1);
 		}
 	}
 }
@@ -224,7 +224,7 @@ void AMFTextureConverter::Run()
 		}
 		else
 		{
-			Sleep(1);
+			amf_sleep(1);
 		}
 	}
 }
@@ -254,8 +254,6 @@ void VideoEncoderVCE::Initialize()
 	Debug("Initializing VideoEncoderVCE.\n");
 	AMF_THROW_IF(g_AMFFactory.Init());
 
-	::amf_increase_timer_precision();
-
 	AMF_THROW_IF(g_AMFFactory.GetFactory()->CreateContext(&m_amfContext));
 	AMF_THROW_IF(m_amfContext->InitDX11(m_d3dRender->GetDevice()));
 
@@ -279,8 +277,6 @@ void VideoEncoderVCE::Shutdown()
 
 	m_encoder->Shutdown();
 	m_converter->Shutdown();
-
-	amf_restore_timer_precision();
 
 	if (fpOut) {
 		fpOut.close();
