@@ -596,37 +596,60 @@ bool OvrController::onPoseUpdate(float predictionS,
         return false;
     }
 
+    // Message from client, tracking is not valid.
+    bool motionValid = !(motion.position[0] == FLT_MAX &&
+                        motion.position[1] == FLT_MAX &&
+                        motion.position[2] == FLT_MAX);
+
+     if (handSkeleton == nullptr) {
+        // Ignore pose update when controllers are not being moved.
+        // Workaround for non-compatible clients.
+         if(abs(motion.linearVelocity[0]) == 0.f &&
+                abs(motion.linearVelocity[1]) == 0.f &&
+                abs(motion.linearVelocity[2]) == 0.f &&
+                abs(motion.angularVelocity[0]) == 0.f &&
+                abs(motion.angularVelocity[1]) == 0.f &&
+                abs(motion.angularVelocity[2]) == 0.f) {
+            motionValid = false;
+        }
+     }
+
     auto vr_driver_input = vr::VRDriverInput();
 
     auto pose = vr::DriverPose_t{};
 
-    pose.poseIsValid = true;
-    pose.result = vr::TrackingResult_Running_OK;
-    pose.deviceIsConnected = true;
+    if(motionValid) {
+        pose.poseIsValid = true;
+        pose.result = vr::TrackingResult_Running_OK;
+        pose.deviceIsConnected = true;
 
-    pose.qDriverFromHeadRotation = HmdQuaternion_Init(1, 0, 0, 0);
-    pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
+        pose.qDriverFromHeadRotation = HmdQuaternion_Init(1, 0, 0, 0);
+        pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
 
-    pose.qRotation = HmdQuaternion_Init(motion.orientation.w,
-                                        motion.orientation.x,
-                                        motion.orientation.y,
-                                        motion.orientation.z); // controllerRotation;
+        pose.qRotation = HmdQuaternion_Init(motion.orientation.w,
+                                            motion.orientation.x,
+                                            motion.orientation.y,
+                                            motion.orientation.z); // controllerRotation;
 
-    pose.vecPosition[0] = motion.position[0];
-    pose.vecPosition[1] = motion.position[1];
-    pose.vecPosition[2] = motion.position[2];
+        pose.vecPosition[0] = motion.position[0];
+        pose.vecPosition[1] = motion.position[1];
+        pose.vecPosition[2] = motion.position[2];
 
-    pose.vecVelocity[0] = motion.linearVelocity[0];
-    pose.vecVelocity[1] = motion.linearVelocity[1];
-    pose.vecVelocity[2] = motion.linearVelocity[2];
+        pose.vecVelocity[0] = motion.linearVelocity[0];
+        pose.vecVelocity[1] = motion.linearVelocity[1];
+        pose.vecVelocity[2] = motion.linearVelocity[2];
 
-    pose.vecAngularVelocity[0] = motion.angularVelocity[0];
-    pose.vecAngularVelocity[1] = motion.angularVelocity[1];
-    pose.vecAngularVelocity[2] = motion.angularVelocity[2];
+        pose.vecAngularVelocity[0] = motion.angularVelocity[0];
+        pose.vecAngularVelocity[1] = motion.angularVelocity[1];
+        pose.vecAngularVelocity[2] = motion.angularVelocity[2];
 
-    pose.poseTimeOffset = predictionS;
+        pose.poseTimeOffset = predictionS;
 
-    m_pose = pose;
+        m_pose = pose;
+        
+        vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
+            this->object_id, pose, sizeof(vr::DriverPose_t));
+    }
 
     if (handSkeleton != nullptr) {
         vr::VRBoneTransform_t boneTransform[SKELETON_BONE_COUNT];
@@ -1005,9 +1028,6 @@ bool OvrController::onPoseUpdate(float predictionS,
             break;
         }
     }
-
-    vr::VRServerDriverHost()->TrackedDevicePoseUpdated(
-        this->object_id, pose, sizeof(vr::DriverPose_t));
 
     return false;
 }
