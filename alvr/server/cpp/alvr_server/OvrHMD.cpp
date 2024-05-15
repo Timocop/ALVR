@@ -323,7 +323,7 @@ void OvrHmd::OnPoseUpdated(float predictionS,
         pose.vecPosition[2] = motion.position[2];
 
         pose.poseTimeOffset = predictionS;
-
+        
         m_pose = pose;
 
         m_poseHistory->OnPoseUpdated(targetTimestampNs, motion);

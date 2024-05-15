@@ -604,12 +604,13 @@ bool OvrController::onPoseUpdate(float predictionS,
      if (handSkeleton == nullptr) {
         // Ignore pose update when controllers are not being moved.
         // Workaround for non-compatible clients.
-         if(abs(motion.linearVelocity[0]) == 0.f &&
-                abs(motion.linearVelocity[1]) == 0.f &&
-                abs(motion.linearVelocity[2]) == 0.f &&
-                abs(motion.angularVelocity[0]) == 0.f &&
-                abs(motion.angularVelocity[1]) == 0.f &&
-                abs(motion.angularVelocity[2]) == 0.f) {
+        // Requires linear/angular CUTOFF to be disabled!
+         if(fabsf(motion.linearVelocity[0]) <= FLT_EPSILON &&
+                fabsf(motion.linearVelocity[1]) <= FLT_EPSILON &&
+                fabsf(motion.linearVelocity[2]) <= FLT_EPSILON &&
+                fabsf(motion.angularVelocity[0]) <= FLT_EPSILON &&
+                fabsf(motion.angularVelocity[1]) <= FLT_EPSILON &&
+                fabsf(motion.angularVelocity[2]) <= FLT_EPSILON) {
             motionValid = false;
         }
      }
