@@ -303,7 +303,9 @@ void *OvrHmd::GetComponent(const char *component_name_and_version) {
 
 vr::DriverPose_t OvrHmd::GetPose() { return m_pose; }
 
-void OvrHmd::OnPoseUpdated(uint64_t targetTimestampNs, FfiDeviceMotion motion) {
+void OvrHmd::OnPoseUpdated(float predictionS,
+                            uint64_t targetTimestampNs, 
+                            FfiDeviceMotion motion) {
     if (this->object_id != vr::k_unTrackedDeviceIndexInvalid) {
         auto pose = vr::DriverPose_t{};
         pose.poseIsValid = true;
@@ -319,6 +321,8 @@ void OvrHmd::OnPoseUpdated(uint64_t targetTimestampNs, FfiDeviceMotion motion) {
         pose.vecPosition[0] = motion.position[0];
         pose.vecPosition[1] = motion.position[1];
         pose.vecPosition[2] = motion.position[2];
+
+        pose.poseTimeOffset = predictionS;
 
         m_pose = pose;
 

@@ -252,7 +252,7 @@ void SetTracking(unsigned long long targetTimestampNs,
                  const FfiHandSkeleton *rightHand) {
     for (int i = 0; i < motionsCount; i++) {
         if (deviceMotions[i].deviceID == HEAD_ID && g_driver_provider.hmd) {
-            g_driver_provider.hmd->OnPoseUpdated(targetTimestampNs, deviceMotions[i]);
+            g_driver_provider.hmd->OnPoseUpdated(controllerPoseTimeOffsetS, targetTimestampNs, deviceMotions[i]);
         } else {
             if (deviceMotions[i].deviceID == LEFT_HAND_ID && g_driver_provider.left_controller) {
                 g_driver_provider.left_controller->onPoseUpdate(
