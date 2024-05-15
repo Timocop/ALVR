@@ -37,6 +37,7 @@
 
 #include <timeapi.h>
 #include <windows.h>
+#include <mmsystem.h>
 //----------------------------------------------------------------------------------------
 // threading
 //----------------------------------------------------------------------------------------
@@ -243,7 +244,46 @@ void AMF_CDECL_CALL amf_sleep(amf_ulong delay)
 #if defined(METRO_APP)
     Concurrency::wait(delay);
 #else
-    Sleep(delay);
+     static bool isSupported = true;
+
+	if (isSupported)
+	{
+        HANDLE timer = CreateWaitableTimerEx(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+        if (timer != NULL)
+        {
+            LARGE_INTEGER liDueTime;
+            // Convert from microseconds to 100 of ns, and negative for relative time.
+            liDueTime.QuadPart = -(delay * 1000 * 10);
+
+            if (!SetWaitableTimer(timer, &liDueTime, 0, NULL, NULL, 0))
+            {
+                return;
+            }
+
+            WaitForSingleObject(timer, INFINITE);
+            CloseHandle(timer);
+            return;
+        }
+        else
+        {
+            switch (GetLastError())
+            {
+            case ERROR_INVALID_PARAMETER:
+            {
+                // CREATE_WAITABLE_TIMER_HIGH_RESOLUTION is not supported
+                isSupported = false;
+                break;
+            }
+            }
+        }
+	}
+
+    if(!isSupported)
+    {
+        timeBeginPeriod(delay);
+        Sleep(delay);
+        timeEndPeriod(delay);
+    }
 #endif
 }
 //----------------------------------------------------------------------------------------
@@ -297,51 +337,7 @@ amf_pts AMF_CDECL_CALL amf_high_precision_clock()
 }
 //-------------------------------------------------------------------------------------------------
 #pragma comment (lib, "Winmm.lib")
-static amf_uint32 timerPrecision = 1;
 
-void AMF_CDECL_CALL amf_increase_timer_precision()
-{
-#if !defined(METRO_APP)
-    while (timeBeginPeriod(timerPrecision) == TIMERR_NOCANDO)
-    {
-        ++timerPrecision;
-    }
-/*
-    typedef NTSTATUS (CALLBACK * NTSETTIMERRESOLUTION)(IN ULONG DesiredTime,IN BOOLEAN SetResolution,OUT PULONG ActualTime);
-    typedef NTSTATUS (CALLBACK * NTQUERYTIMERRESOLUTION)(OUT PULONG MaximumTime,OUT PULONG MinimumTime,OUT PULONG CurrentTime);
-
-    HINSTANCE hNtDll = LoadLibrary(L"NTDLL.dll");
-    if(hNtDll != NULL)
-    {
-        ULONG MinimumResolution=0;
-        ULONG MaximumResolution=0;
-        ULONG ActualResolution=0;
-
-        NTQUERYTIMERRESOLUTION NtQueryTimerResolution = (NTQUERYTIMERRESOLUTION)GetProcAddress(hNtDll, "NtQueryTimerResolution");
-        NTSETTIMERRESOLUTION NtSetTimerResolution = (NTSETTIMERRESOLUTION)GetProcAddress(hNtDll, "NtSetTimerResolution");
-
-        if(NtQueryTimerResolution != NULL && NtSetTimerResolution != NULL)
-        {
-            NtQueryTimerResolution (&MinimumResolution, &MaximumResolution, &ActualResolution);
-            if(MaximumResolution != 0)
-            {
-                NtSetTimerResolution (MaximumResolution, TRUE, &ActualResolution);
-                NtQueryTimerResolution (&MinimumResolution, &MaximumResolution, &ActualResolution);
-
-                // if call NtQueryTimerResolution() again it will return the same values but precision is actually increased
-            }
-        }
-        FreeLibrary(hNtDll);
-    }
-*/
-#endif
-}
-void AMF_CDECL_CALL amf_restore_timer_precision()
-{
-#if !defined(METRO_APP)
-    timeEndPeriod(timerPrecision);
-#endif
-}
 //----------------------------------------------------------------------------------------
 amf_handle  AMF_CDECL_CALL amf_load_library1(const wchar_t* filename, bool /*bGlobal*/)
 {

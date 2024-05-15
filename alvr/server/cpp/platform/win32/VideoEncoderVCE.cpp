@@ -20,7 +20,7 @@ AMFPipe::~AMFPipe()
 	m_amfComponentSrc->Drain();
 }
 
-void AMFPipe::doPassthrough(bool hasQueryTimeout, uint32_t timerResolution) 
+void AMFPipe::doPassthrough(bool hasQueryTimeout) 
 {
 	amf::AMFDataPtr data = nullptr;
 	if (hasQueryTimeout) {
@@ -34,12 +34,10 @@ void AMFPipe::doPassthrough(bool hasQueryTimeout, uint32_t timerResolution)
 		uint16_t timeout = 1000; // 1s timeout
 		AMF_RESULT res = m_amfComponentSrc->QueryOutput(&data);
 
-		timeBeginPeriod(timerResolution);
 		while (!data && --timeout != 0) {
 			amf_sleep(1);
 			res = m_amfComponentSrc->QueryOutput(&data);
 		}
-		timeEndPeriod(timerResolution);
 
 		if (data) {
 			m_receiver(data);
@@ -96,7 +94,7 @@ void AMFPipeline::Run(bool hasQueryTimeout)
 {
 	for (auto &pipe : m_pipes)
 	{
-		pipe->doPassthrough(hasQueryTimeout, m_timerResolution);
+		pipe->doPassthrough(hasQueryTimeout);
 	}
 }
 
