@@ -101,20 +101,20 @@ vr::EVRInitError Controller::Activate(vr::TrackedDeviceIndex_t unObjectId) {
 
     // NB: here we set some initial values for the hand skeleton to fix the frozen hand bug
     {
-        vr::VRBoneTransform_t boneTransforms[SKELETON_BONE_COUNT];
+        vr::VRBoneTransform_t boneTransforms[HandSkeletonBone::eBone_Count];
         GetBoneTransform(false, boneTransforms);
 
         vr_driver_input->UpdateSkeletonComponent(
             m_compSkeleton,
             vr::VRSkeletalMotionRange_WithController,
             boneTransforms,
-            SKELETON_BONE_COUNT
+            HandSkeletonBone::eBone_Count
         );
         vr_driver_input->UpdateSkeletonComponent(
             m_compSkeleton,
             vr::VRSkeletalMotionRange_WithoutController,
             boneTransforms,
-            SKELETON_BONE_COUNT
+            HandSkeletonBone::eBone_Count
         );
     }
 
@@ -264,8 +264,8 @@ bool Controller::onPoseUpdate(
     }
 
     if (handSkeleton != nullptr) {
-        vr::VRBoneTransform_t boneTransform[SKELETON_BONE_COUNT] = {};
-        for (int j = 0; j < 31; j++) {
+        vr::VRBoneTransform_t boneTransform[HandSkeletonBone::eBone_Count] = {};
+        for (int j = 0; j < HandSkeletonBone::eBone_Count; j++) {
             boneTransform[j].orientation.w = handSkeleton->jointRotations[j].w;
             boneTransform[j].orientation.x = handSkeleton->jointRotations[j].x;
             boneTransform[j].orientation.y = handSkeleton->jointRotations[j].y;
@@ -280,13 +280,13 @@ bool Controller::onPoseUpdate(
             m_compSkeleton,
             vr::VRSkeletalMotionRange_WithController,
             boneTransform,
-            SKELETON_BONE_COUNT
+            HandSkeletonBone::eBone_Count
         );
         vr_driver_input->UpdateSkeletonComponent(
             m_compSkeleton,
             vr::VRSkeletalMotionRange_WithoutController,
             boneTransform,
-            SKELETON_BONE_COUNT
+            HandSkeletonBone::eBone_Count
         );
 
         float rotThumb = (handSkeleton->jointRotations[2].z + handSkeleton->jointRotations[2].y
@@ -357,7 +357,9 @@ bool Controller::onPoseUpdate(
 
         // Ring and pinky fingers are not tracked. Infer a more natural pose.
         if (m_currentThumbTouch) {
-            vr_driver_input->UpdateScalarComponent(m_buttonHandles[ALVR_INPUT_FINGER_RING], 1, 0.0);
+            vr_driver_input->UpdateScalarComponent(
+                m_buttonHandles[ALVR_INPUT_FINGER_RING], 1, 0.0
+            );
             vr_driver_input->UpdateScalarComponent(
                 m_buttonHandles[ALVR_INPUT_FINGER_PINKY], 1, 0.0
             );
@@ -370,7 +372,7 @@ bool Controller::onPoseUpdate(
             );
         }
 
-        vr::VRBoneTransform_t boneTransforms[SKELETON_BONE_COUNT];
+        vr::VRBoneTransform_t boneTransforms[HandSkeletonBone::eBone_Count];
 
         // Perform whatever logic is necessary to convert your device's input into a
         // skeletal pose, first to create a pose "With Controller", that is as close to the
@@ -382,7 +384,7 @@ bool Controller::onPoseUpdate(
             m_compSkeleton,
             vr::VRSkeletalMotionRange_WithController,
             boneTransforms,
-            SKELETON_BONE_COUNT
+            HandSkeletonBone::eBone_Count
         );
         if (err != vr::VRInputError_None) {
             // Handle failure case
@@ -396,7 +398,7 @@ bool Controller::onPoseUpdate(
             m_compSkeleton,
             vr::VRSkeletalMotionRange_WithoutController,
             boneTransforms,
-            SKELETON_BONE_COUNT
+            HandSkeletonBone::eBone_Count
         );
         if (err != vr::VRInputError_None) {
             // Handle failure case
@@ -1170,8 +1172,8 @@ void GetGripClickBoneTransform(
 void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t outBoneTransform[]) {
     auto isLeftHand = device_id == HAND_LEFT_ID;
 
-    vr::VRBoneTransform_t boneTransform1[SKELETON_BONE_COUNT];
-    vr::VRBoneTransform_t boneTransform2[SKELETON_BONE_COUNT];
+    vr::VRBoneTransform_t boneTransform1[HandSkeletonBone::eBone_Count];
+    vr::VRBoneTransform_t boneTransform2[HandSkeletonBone::eBone_Count];
 
     // root and wrist
     outBoneTransform[0] = { { 0.000000f, 0.000000f, 0.000000f, 1 },
@@ -1187,7 +1189,7 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
     // thumb
     GetThumbBoneTransform(withController, isLeftHand, m_lastThumbTouch, boneTransform1);
     GetThumbBoneTransform(withController, isLeftHand, m_currentThumbTouch, boneTransform2);
-    for (int boneIdx = 2; boneIdx < 6; boneIdx++) {
+    for (int boneIdx = HandSkeletonBone::eBone_Thumb0; boneIdx <= HandSkeletonBone::eBone_Thumb3; boneIdx++) {
         outBoneTransform[boneIdx].position = Lerp(
             boneTransform1[boneIdx].position,
             boneTransform2[boneIdx].position,
@@ -1202,11 +1204,13 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
 
     // trigger (index to pinky)
     if (m_triggerValue > 0) {
-        GetTriggerBoneTransform(withController, isLeftHand, true, false, boneTransform1);
-        GetTriggerBoneTransform(withController, isLeftHand, true, true, boneTransform2);
-        for (int boneIdx = 6; boneIdx < SKELETON_BONE_COUNT; boneIdx++) {
+        GetTriggerBoneTransform(withController, isLeftHand, false, false, boneTransform1);
+        GetTriggerBoneTransform(withController, isLeftHand, false, true, boneTransform2);
+        for (int boneIdx = HandSkeletonBone::eBone_IndexFinger0; boneIdx < HandSkeletonBone::eBone_Count; boneIdx++) {
             outBoneTransform[boneIdx].position = Lerp(
-                boneTransform1[boneIdx].position, boneTransform2[boneIdx].position, m_triggerValue
+                boneTransform1[boneIdx].position, 
+                boneTransform2[boneIdx].position, 
+                m_triggerValue
             );
             outBoneTransform[boneIdx].orientation = Slerp(
                 boneTransform1[boneIdx].orientation,
@@ -1216,12 +1220,12 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
         }
     } else {
         GetTriggerBoneTransform(
-            withController, isLeftHand, m_lastTriggerTouch, false, boneTransform1
+            withController, isLeftHand, false, false, boneTransform1
         );
         GetTriggerBoneTransform(
-            withController, isLeftHand, m_currentTriggerTouch, false, boneTransform2
+            withController, isLeftHand, false, false, boneTransform2
         );
-        for (int boneIdx = 6; boneIdx < SKELETON_BONE_COUNT; boneIdx++) {
+        for (int boneIdx = HandSkeletonBone::eBone_IndexFinger0; boneIdx < HandSkeletonBone::eBone_Count; boneIdx++) {
             outBoneTransform[boneIdx].position = Lerp(
                 boneTransform1[boneIdx].position,
                 boneTransform2[boneIdx].position,
@@ -1238,9 +1242,11 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
     // grip (middle to pinky)
     if (m_gripValue > 0) {
         GetGripClickBoneTransform(withController, isLeftHand, boneTransform2);
-        for (int boneIdx = 11; boneIdx < 26; boneIdx++) {
+        for (int boneIdx = HandSkeletonBone::eBone_MiddleFinger0; boneIdx <= HandSkeletonBone::eBone_PinkyFinger4; boneIdx++) {
             outBoneTransform[boneIdx].position = Lerp(
-                outBoneTransform[boneIdx].position, boneTransform2[boneIdx].position, m_gripValue
+                outBoneTransform[boneIdx].position, 
+                boneTransform2[boneIdx].position, 
+                m_gripValue
             );
             outBoneTransform[boneIdx].orientation = Slerp(
                 outBoneTransform[boneIdx].orientation,
@@ -1248,9 +1254,11 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
                 m_gripValue
             );
         }
-        for (int boneIdx = 28; boneIdx < SKELETON_BONE_COUNT; boneIdx++) {
+        for (int boneIdx = HandSkeletonBone::eBone_Aux_MiddleFinger; boneIdx <= HandSkeletonBone::eBone_Aux_PinkyFinger; boneIdx++) {
             outBoneTransform[boneIdx].position = Lerp(
-                outBoneTransform[boneIdx].position, boneTransform2[boneIdx].position, m_gripValue
+                outBoneTransform[boneIdx].position, 
+                boneTransform2[boneIdx].position, 
+                m_gripValue
             );
             outBoneTransform[boneIdx].orientation = Slerp(
                 outBoneTransform[boneIdx].orientation,
