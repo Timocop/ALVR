@@ -86,8 +86,6 @@ private:
         eBone_Count
     };
 
-    static const int ANIMATION_FRAME_COUNT = 15;
-
     std::map<uint64_t, vr::VRInputComponentHandle_t> m_buttonHandles;
 
     vr::VRInputComponentHandle_t m_compHaptic;
@@ -98,12 +96,8 @@ private:
 
     // These variables are used for controller hand animation
     // todo: move to rust
-    float m_thumbTouchAnimationProgress = 0;
-    float m_indexTouchAnimationProgress = 0;
     bool m_currentThumbTouch = false;
-    bool m_lastThumbTouch = false;
     bool m_currentTriggerTouch = false;
-    bool m_lastTriggerTouch = false;
     float m_triggerValue = 0;
     float m_gripValue = 0;
 
