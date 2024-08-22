@@ -96,8 +96,9 @@ private:
 
     // These variables are used for controller hand animation
     // todo: move to rust
-    bool m_currentThumbTouch = false;
-    bool m_currentTriggerTouch = false;
+    int m_currentThumbTouch = 0;
+    int m_currentRestTouch = 0;
+    int m_currentTriggerTouch = 0;
     float m_triggerValue = 0;
     float m_gripValue = 0;
 

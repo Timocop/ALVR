@@ -184,26 +184,37 @@ void Controller::SetButton(uint64_t id, FfiButtonValue value) {
         return;
     }
 
-    for (auto id : ALVR_TO_STEAMVR_PATH_IDS[id]) {
+    for (auto idx : ALVR_TO_STEAMVR_PATH_IDS[id]) {
         if (value.type == BUTTON_TYPE_BINARY) {
             vr::VRDriverInput()->UpdateBooleanComponent(
-                m_buttonHandles[id], (bool)value.binary, 0.0
+                m_buttonHandles[idx], (bool)value.binary, 0.0
             );
         } else {
-            vr::VRDriverInput()->UpdateScalarComponent(m_buttonHandles[id], value.scalar, 0.0);
+            vr::VRDriverInput()->UpdateScalarComponent(m_buttonHandles[idx], value.scalar, 0.0);
         }
     }
 
     // todo: remove when moving inferred controller hand skeleton to rust
-    // todo: RIGHT_THUMBREST_TOUCH_ID / LEFT_THUMBREST_TOUCH_ID too glitchy to use? Pico Neo 3 issues.
     if (id == LEFT_A_TOUCH_ID || id == LEFT_B_TOUCH_ID 
-        || id == LEFT_X_TOUCH_ID || id == LEFT_Y_TOUCH_ID 
-        || id == LEFT_TRACKPAD_TOUCH_ID || id == LEFT_THUMBSTICK_TOUCH_ID
-        || id == RIGHT_A_TOUCH_ID || id == RIGHT_B_TOUCH_ID
-        || id == RIGHT_TRACKPAD_TOUCH_ID || id == RIGHT_THUMBSTICK_TOUCH_ID) {
-        m_currentThumbTouch = value.binary;
+            || id == LEFT_X_TOUCH_ID || id == LEFT_Y_TOUCH_ID 
+            || id == LEFT_THUMBSTICK_TOUCH_ID
+            || id == RIGHT_A_TOUCH_ID || id == RIGHT_B_TOUCH_ID
+            || id == RIGHT_THUMBSTICK_TOUCH_ID) {
+        if (value.binary) 
+            m_currentThumbTouch++;
+        else
+            m_currentThumbTouch--;
+    } else if (id == LEFT_TRACKPAD_TOUCH_ID || id == LEFT_THUMBSTICK_TOUCH_ID
+            || id == LEFT_THUMBREST_TOUCH_ID || id == RIGHT_TRACKPAD_TOUCH_ID) {
+        if (value.binary) 
+            m_currentRestTouch++;
+        else
+            m_currentRestTouch--;
     } else if (id == LEFT_TRIGGER_TOUCH_ID || id == RIGHT_TRIGGER_TOUCH_ID) {
-        m_currentTriggerTouch = value.binary;
+         if (value.binary) 
+            m_currentTriggerTouch++;
+        else
+            m_currentTriggerTouch--;
     } else if (id == LEFT_TRIGGER_VALUE_ID || id == RIGHT_TRIGGER_VALUE_ID) {
         m_triggerValue = value.scalar;
     } else if (id == LEFT_SQUEEZE_VALUE_ID || id == RIGHT_SQUEEZE_VALUE_ID) {
@@ -329,7 +340,7 @@ bool Controller::onPoseUpdate(
         );
 
         // Ring and pinky fingers are not tracked. Infer a more natural pose.
-        if (m_currentThumbTouch) {
+        if (m_currentThumbTouch != 0) {
             vr_driver_input->UpdateScalarComponent(
                 m_buttonHandles[ALVR_INPUT_FINGER_RING], 1, 0.0
             );
@@ -1187,7 +1198,7 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
     }
 
     // thumb
-    if (m_currentThumbTouch) {
+    if (m_currentThumbTouch != 0 || m_currentRestTouch != 0) {
         GetThumbBoneTransform(withController, isLeftHand, true, boneTransform1);
         for (int boneIdx = HandSkeletonBone::eBone_Thumb0; boneIdx <= HandSkeletonBone::eBone_Thumb3; boneIdx++) {
             outBoneTransform[boneIdx].position = boneTransform1[boneIdx].position;
@@ -1195,14 +1206,16 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
         }
 
         // peace (ring to pinky)
-        GetGripClickBoneTransform(withController, isLeftHand, boneTransform1);
-        for (int boneIdx = HandSkeletonBone::eBone_RingFinger0; boneIdx <= HandSkeletonBone::eBone_PinkyFinger4; boneIdx++) {
-            outBoneTransform[boneIdx].position = boneTransform1[boneIdx].position;
-            outBoneTransform[boneIdx].orientation = boneTransform1[boneIdx].orientation;
-        }
-        for (int boneIdx = HandSkeletonBone::eBone_Aux_RingFinger; boneIdx <= HandSkeletonBone::eBone_Aux_PinkyFinger; boneIdx++) {
-            outBoneTransform[boneIdx].position = boneTransform1[boneIdx].position;
-            outBoneTransform[boneIdx].orientation = boneTransform1[boneIdx].orientation;
+        if (m_currentThumbTouch != 0) {
+            GetGripClickBoneTransform(withController, isLeftHand, boneTransform1);
+            for (int boneIdx = HandSkeletonBone::eBone_RingFinger0; boneIdx <= HandSkeletonBone::eBone_PinkyFinger4; boneIdx++) {
+                outBoneTransform[boneIdx].position = boneTransform1[boneIdx].position;
+                outBoneTransform[boneIdx].orientation = boneTransform1[boneIdx].orientation;
+            }
+            for (int boneIdx = HandSkeletonBone::eBone_Aux_RingFinger; boneIdx <= HandSkeletonBone::eBone_Aux_PinkyFinger; boneIdx++) {
+                outBoneTransform[boneIdx].position = boneTransform1[boneIdx].position;
+                outBoneTransform[boneIdx].orientation = boneTransform1[boneIdx].orientation;
+            }
         }
     } else {
         GetThumbBoneTransform(withController, isLeftHand, false, boneTransform1);
