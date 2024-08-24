@@ -377,7 +377,14 @@ pub unsafe extern "C" fn HmdDriverFactory(
 ) -> *mut c_void {
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        alvr_server_core::init_logging();
+        alvr_server_core::initialize_environment(FILESYSTEM_LAYOUT.clone());
+
+        let log_to_disk = alvr_server_core::settings().extra.logging.log_to_disk;
+
+        alvr_server_core::init_logging(
+            log_to_disk.then(|| FILESYSTEM_LAYOUT.session_log()),
+            Some(FILESYSTEM_LAYOUT.crash_log()),
+        );
 
         unsafe {
             g_sessionPath = CString::new(FILESYSTEM_LAYOUT.session().to_string_lossy().to_string())
@@ -399,7 +406,8 @@ pub unsafe extern "C" fn HmdDriverFactory(
             LogError = Some(alvr_server_core::alvr_log_error);
             LogWarn = Some(alvr_server_core::alvr_log_warn);
             LogInfo = Some(alvr_server_core::alvr_log_info);
-            LogDebug = Some(alvr_server_core::alvr_log_debug);
+            LogDebug = Some(alvr_server_core::alvr_dbg_server_impl);
+            LogEncoder = Some(alvr_server_core::alvr_dbg_encoder);
             LogPeriodically = Some(alvr_server_core::alvr_log_periodically);
             PathStringToHash = Some(alvr_server_core::alvr_path_to_id);
             GetSerialNumber = Some(props::get_serial_number);

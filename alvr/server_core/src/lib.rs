@@ -18,7 +18,7 @@ pub use tracking::get_hand_skeleton_offsets;
 
 use crate::connection::VideoPacket;
 use alvr_common::{
-    error,
+    dbg_server_core, error,
     glam::Vec2,
     once_cell::sync::Lazy,
     parking_lot::{Mutex, RwLock},
@@ -31,7 +31,7 @@ use alvr_packets::{
     BatteryInfo, ButtonEntry, ClientListAction, DecoderInitializationConfig, Haptics, Tracking,
     VideoPacketHeader,
 };
-use alvr_server_io::ServerDataManager;
+use alvr_server_io::ServerSessionManager;
 use alvr_session::{CodecType, OpenvrProperty, Settings};
 use alvr_sockets::StreamSender;
 use bitrate::{BitrateManager, DynamicEncoderParams};
@@ -44,7 +44,7 @@ use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, SyncSender, TrySendError},
-        Arc,
+        Arc, OnceLock,
     },
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -52,14 +52,21 @@ use std::{
 use sysinfo::{ProcessRefreshKind, RefreshKind};
 use tokio::{runtime::Runtime, sync::broadcast};
 
-static FILESYSTEM_LAYOUT: Lazy<afs::Layout> = Lazy::new(|| {
-    afs::filesystem_layout_from_openvr_driver_root_dir(
-        &alvr_server_io::get_driver_dir_from_registered().unwrap(),
-    )
+static FILESYSTEM_LAYOUT: OnceLock<afs::Layout> = OnceLock::new();
+
+pub fn initialize_environment(layout: afs::Layout) {
+    FILESYSTEM_LAYOUT.set(layout).unwrap();
+}
+
+// This is lazily initialized when initializing logging or ServerCoreContext. So FILESYSTEM_LAYOUT
+// needs to be initialized first using initialize_environment().
+// NB: this must remain a global because only one instance should exist for the whole application
+// execution time.
+static SESSION_MANAGER: Lazy<RwLock<ServerSessionManager>> = Lazy::new(|| {
+    RwLock::new(ServerSessionManager::new(
+        FILESYSTEM_LAYOUT.get().map(|l| l.session()),
+    ))
 });
-// NB: this must remain a global because only one instance should exist at a time
-static SERVER_DATA_MANAGER: Lazy<RwLock<ServerDataManager>> =
-    Lazy::new(|| RwLock::new(ServerDataManager::new(&FILESYSTEM_LAYOUT.session())));
 
 // todo: use this as the network packet
 pub struct ViewsConfig {
@@ -111,7 +118,7 @@ pub fn create_recording_file(connection_context: &ConnectionContext, settings: &
         CodecType::AV1 => "av1",
     };
 
-    let path = FILESYSTEM_LAYOUT.log_dir.join(format!(
+    let path = FILESYSTEM_LAYOUT.get().unwrap().log_dir.join(format!(
         "recording.{}.{ext}",
         chrono::Local::now().format("%F.%H-%M-%S")
     ));
@@ -153,12 +160,12 @@ pub fn notify_restart_driver() {
 }
 
 pub fn settings() -> Settings {
-    SERVER_DATA_MANAGER.read().settings().clone()
+    SESSION_MANAGER.read().settings().clone()
 }
 
 pub fn registered_button_set() -> HashSet<u64> {
-    let data_manager = SERVER_DATA_MANAGER.read();
-    if let Switch::Enabled(input_mapping) = &data_manager.settings().headset.controllers {
+    let session_manager = SESSION_MANAGER.read();
+    if let Switch::Enabled(input_mapping) = &session_manager.settings().headset.controllers {
         input_mapping::registered_button_set(&input_mapping.emulation_mode)
     } else {
         HashSet::new()
@@ -175,7 +182,9 @@ pub struct ServerCoreContext {
 
 impl ServerCoreContext {
     pub fn new() -> (Self, mpsc::Receiver<ServerCoreEvent>) {
-        if SERVER_DATA_MANAGER
+        dbg_server_core!("Creating");
+
+        if SESSION_MANAGER
             .read()
             .settings()
             .extra
@@ -185,7 +194,7 @@ impl ServerCoreContext {
             env::set_var("RUST_BACKTRACE", "1");
         }
 
-        SERVER_DATA_MANAGER.write().clean_client_list();
+        SESSION_MANAGER.write().clean_client_list();
 
         let (events_sender, events_receiver) = mpsc::channel();
 
@@ -222,6 +231,8 @@ impl ServerCoreContext {
     }
 
     pub fn start_connection(&self) {
+        dbg_server_core!("start_connection");
+
         // Note: Idle state is not used on the server side
         *self.lifecycle_state.write() = LifecycleState::Resumed;
 
@@ -233,10 +244,12 @@ impl ServerCoreContext {
     }
 
     pub fn send_haptics(&self, haptics: Haptics) {
-        let haptics_config = {
-            let data_manager_lock = SERVER_DATA_MANAGER.read();
+        dbg_server_core!("send_haptics");
 
-            if data_manager_lock.settings().extra.logging.log_haptics {
+        let haptics_config = {
+            let session_manager_lock = SESSION_MANAGER.read();
+
+            if session_manager_lock.settings().extra.logging.log_haptics {
                 alvr_events::send_event(EventType::Haptics(HapticsEvent {
                     path: DEVICE_ID_TO_PATH
                         .get(&haptics.device_id)
@@ -248,7 +261,7 @@ impl ServerCoreContext {
                 }))
             }
 
-            data_manager_lock
+            session_manager_lock
                 .settings()
                 .headset
                 .controllers
@@ -267,6 +280,8 @@ impl ServerCoreContext {
     }
 
     pub fn set_video_config_nals(&self, config_buffer: Vec<u8>, codec: CodecType) {
+        dbg_server_core!("set_video_config_nals");
+
         if let Some(sender) = &*self.connection_context.video_mirror_sender.lock() {
             sender.send(config_buffer.clone()).ok();
         }
@@ -282,6 +297,8 @@ impl ServerCoreContext {
     }
 
     pub fn send_video_nal(&self, target_timestamp: Duration, nal_buffer: Vec<u8>, is_idr: bool) {
+        dbg_server_core!("send_video_nal");
+
         // start in the corrupts state, the client didn't receive the initial IDR yet.
         static STREAM_CORRUPTED: AtomicBool = AtomicBool::new(true);
         static LAST_IDR_INSTANT: Lazy<Mutex<Instant>> = Lazy::new(|| Mutex::new(Instant::now()));
@@ -293,7 +310,7 @@ impl ServerCoreContext {
                 STREAM_CORRUPTED.store(false, Ordering::SeqCst);
             }
 
-            if let Switch::Enabled(config) = &SERVER_DATA_MANAGER
+            if let Switch::Enabled(config) = &SESSION_MANAGER
                 .read()
                 .settings()
                 .extra
@@ -311,7 +328,7 @@ impl ServerCoreContext {
                     if is_idr {
                         create_recording_file(
                             &self.connection_context,
-                            SERVER_DATA_MANAGER.read().settings(),
+                            SESSION_MANAGER.read().settings(),
                         );
                         *LAST_IDR_INSTANT.lock() = Instant::now();
                     }
@@ -319,7 +336,7 @@ impl ServerCoreContext {
             }
 
             if !STREAM_CORRUPTED.load(Ordering::SeqCst)
-                || !SERVER_DATA_MANAGER
+                || !SESSION_MANAGER
                     .read()
                     .settings()
                     .connection
@@ -366,12 +383,14 @@ impl ServerCoreContext {
     }
 
     pub fn get_dynamic_encoder_params(&self) -> Option<DynamicEncoderParams> {
+        dbg_server_core!("get_dynamic_encoder_params");
+
         let pair = {
-            let server_data_lock = SERVER_DATA_MANAGER.read();
+            let session_manager_lock = SESSION_MANAGER.read();
             self.connection_context
                 .bitrate_manager
                 .lock()
-                .get_encoder_params(&server_data_lock.settings().video.bitrate)
+                .get_encoder_params(&session_manager_lock.settings().video.bitrate)
         };
 
         if let Some((params, stats)) = pair {
@@ -386,24 +405,36 @@ impl ServerCoreContext {
     }
 
     pub fn report_composed(&self, target_timestamp: Duration, offset: Duration) {
+        dbg_server_core!("report_composed");
+
         if let Some(stats) = &mut *self.connection_context.statistics_manager.lock() {
             stats.report_frame_composed(target_timestamp, offset);
         }
     }
 
     pub fn report_present(&self, target_timestamp: Duration, offset: Duration) {
+        dbg_server_core!("report_present");
+
         if let Some(stats) = &mut *self.connection_context.statistics_manager.lock() {
             stats.report_frame_present(target_timestamp, offset);
         }
 
-        let server_data_lock = SERVER_DATA_MANAGER.read();
+        let session_manager_lock = SESSION_MANAGER.read();
         self.connection_context
             .bitrate_manager
             .lock()
-            .report_frame_present(&server_data_lock.settings().video.bitrate.adapt_to_framerate);
+            .report_frame_present(
+                &session_manager_lock
+                    .settings()
+                    .video
+                    .bitrate
+                    .adapt_to_framerate,
+            );
     }
 
     pub fn duration_until_next_vsync(&self) -> Option<Duration> {
+        dbg_server_core!("duration_until_next_vsync");
+
         self.connection_context
             .statistics_manager
             .lock()
@@ -412,6 +443,8 @@ impl ServerCoreContext {
     }
 
     pub fn restart(self) {
+        dbg_server_core!("restart");
+
         self.is_restarting.set(true);
 
         // drop is called here for self
@@ -420,13 +453,16 @@ impl ServerCoreContext {
 
 impl Drop for ServerCoreContext {
     fn drop(&mut self) {
+        dbg_server_core!("Drop");
+
         // Invoke connection runtimes shutdown
         *self.lifecycle_state.write() = LifecycleState::ShuttingDown;
 
+        dbg_server_core!("Setting clients as Disconnecting");
         {
-            let mut data_manager_lock = SERVER_DATA_MANAGER.write();
+            let mut session_manager_lock = SESSION_MANAGER.write();
 
-            let hostnames = data_manager_lock
+            let hostnames = session_manager_lock
                 .client_list()
                 .iter()
                 .filter(|&(_, info)| {
@@ -439,35 +475,34 @@ impl Drop for ServerCoreContext {
                 .collect::<Vec<_>>();
 
             for hostname in hostnames {
-                data_manager_lock.update_client_list(
+                session_manager_lock.update_client_list(
                     hostname,
                     ClientListAction::SetConnectionState(ConnectionState::Disconnecting),
                 );
             }
         }
 
+        dbg_server_core!("Joining connection thread");
         if let Some(thread) = self.connection_thread.write().take() {
             thread.join().ok();
         }
 
         // apply openvr config for the next launch
+        dbg_server_core!("Setting restart settings chache");
         {
-            let mut server_data_lock = SERVER_DATA_MANAGER.write();
-            server_data_lock.session_mut().openvr_config =
-                connection::contruct_openvr_config(server_data_lock.session());
+            let mut session_manager_lock = SESSION_MANAGER.write();
+            session_manager_lock.session_mut().openvr_config =
+                connection::contruct_openvr_config(session_manager_lock.session());
         }
 
-        if let Some(backup) = SERVER_DATA_MANAGER
-            .write()
-            .session_mut()
-            .drivers_backup
-            .take()
-        {
+        dbg_server_core!("Restore drivers registration backup");
+        if let Some(backup) = SESSION_MANAGER.write().session_mut().drivers_backup.take() {
             alvr_server_io::driver_registration(&backup.other_paths, true).ok();
             alvr_server_io::driver_registration(&[backup.alvr_path], false).ok();
         }
 
-        while SERVER_DATA_MANAGER
+        // todo: check if this is still needed
+        while SESSION_MANAGER
             .read()
             .client_list()
             .iter()
