@@ -4,6 +4,7 @@
 #include "TrackedDevice.h"
 #include "openvr_driver.h"
 #include <map>
+#include <set>
 
 class Controller : public TrackedDevice, public vr::ITrackedDeviceServerDriver {
 public:
@@ -96,9 +97,9 @@ private:
 
     // These variables are used for controller hand animation
     // todo: move to rust
-    int m_currentThumbTouch = 0;
-    int m_currentRestTouch = 0;
-    int m_currentTriggerTouch = 0;
+    std::set<uint64_t> m_currentThumbTouch;
+    std::set<uint64_t> m_currentRestTouch;
+    std::set<uint64_t> m_currentTriggerTouch;
     float m_triggerValue = 0;
     float m_gripValue = 0;
 
