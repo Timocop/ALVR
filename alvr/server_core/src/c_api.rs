@@ -200,7 +200,7 @@ pub unsafe extern "C" fn alvr_path_to_id(path_string: *const c_char) -> u64 {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn alvr_log_error(string_ptr: *const c_char) {
+pub unsafe extern "C" fn alvr_error(string_ptr: *const c_char) {
     alvr_common::show_e(CStr::from_ptr(string_ptr).to_string_lossy());
 }
 
@@ -209,28 +209,23 @@ pub unsafe fn log(level: log::Level, string_ptr: *const c_char) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn alvr_log_warn(string_ptr: *const c_char) {
+pub unsafe extern "C" fn alvr_warn(string_ptr: *const c_char) {
     log(log::Level::Warn, string_ptr);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn alvr_log_info(string_ptr: *const c_char) {
+pub unsafe extern "C" fn alvr_info(string_ptr: *const c_char) {
     log(log::Level::Info, string_ptr);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn alvr_log_debug(string_ptr: *const c_char) {
-    log(log::Level::Debug, string_ptr);
-}
-
-#[no_mangle]
 pub unsafe extern "C" fn alvr_dbg_server_impl(string_ptr: *const c_char) {
-    alvr_common::dbg_server_impl!("{}", CStr::from_ptr(string_ptr).to_str().unwrap());
+    alvr_common::dbg_server_impl!("{}", CStr::from_ptr(string_ptr).to_string_lossy());
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn alvr_dbg_encoder(string_ptr: *const c_char) {
-    alvr_common::dbg_encoder!("{}", CStr::from_ptr(string_ptr).to_str().unwrap());
+    alvr_common::dbg_encoder!("{}", CStr::from_ptr(string_ptr).to_string_lossy());
 }
 
 // Should not be used in production
@@ -477,13 +472,15 @@ pub extern "C" fn alvr_send_haptics(
     frequency: f32,
     amplitude: f32,
 ) {
-    if let Some(context) = &*SERVER_CORE_CONTEXT.read() {
-        context.send_haptics(Haptics {
-            device_id,
-            duration: Duration::from_secs_f32(f32::max(duration_s, 0.0)),
-            frequency,
-            amplitude,
-        });
+    if let Ok(duration) = Duration::try_from_secs_f32(duration_s) {
+        if let Some(context) = &*SERVER_CORE_CONTEXT.read() {
+            context.send_haptics(Haptics {
+                device_id,
+                duration,
+                frequency,
+                amplitude,
+            });
+        }
     }
 }
 
