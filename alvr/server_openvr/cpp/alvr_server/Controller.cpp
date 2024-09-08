@@ -320,10 +320,10 @@ bool Controller::onPoseUpdate(float predictionS, FfiHandData handData) {
     if (!enabled) {
         return false;
     } else if (handSkeleton != nullptr) {
-        vr::VRBoneTransform_t boneTransform[SKELETON_BONE_COUNT] = {};
+        vr::VRBoneTransform_t boneTransform[HandSkeletonBone::eBone_Count] = {};
 
         // NB: start from index 1 to skip the root bone
-        for (int j = 1; j < 31; j++) {
+        for (int j = HandSkeletonBone::eBone_Wrist; j < HandSkeletonBone::eBone_Count; j++) {
             boneTransform[j].orientation.w = handSkeleton->jointRotations[j].w;
             boneTransform[j].orientation.x = handSkeleton->jointRotations[j].x;
             boneTransform[j].orientation.y = handSkeleton->jointRotations[j].y;
@@ -377,34 +377,6 @@ bool Controller::onPoseUpdate(float predictionS, FfiHandData handData) {
             m_buttonHandles[ALVR_INPUT_FINGER_PINKY], rotPinky, 0.0
         );
     } else if (controllerMotion != nullptr) {
-        if (m_lastThumbTouch != m_currentThumbTouch) {
-            m_thumbTouchAnimationProgress += 1.f / ANIMATION_FRAME_COUNT;
-            if (m_thumbTouchAnimationProgress > 1.f) {
-                m_thumbTouchAnimationProgress = 0;
-                m_lastThumbTouch = m_currentThumbTouch;
-            }
-        } else {
-            m_thumbTouchAnimationProgress = 0;
-        }
-
-        if (m_lastTriggerTouch != m_currentTriggerTouch) {
-            m_indexTouchAnimationProgress += 1.f / ANIMATION_FRAME_COUNT;
-            if (m_indexTouchAnimationProgress > 1.f) {
-                m_indexTouchAnimationProgress = 0;
-                m_lastTriggerTouch = m_currentTriggerTouch;
-            }
-        } else {
-            m_indexTouchAnimationProgress = 0;
-        }
-
-        float indexCurl = 0.0;
-        if (m_triggerValue > 0.0) {
-            indexCurl = 0.5 + m_triggerValue * 0.5;
-        } else if (m_lastTriggerTouch == 0) {
-            indexCurl = m_indexTouchAnimationProgress * 0.5;
-        } else {
-            indexCurl = 0.5 - m_indexTouchAnimationProgress * 0.5;
-        }
         vr_driver_input->UpdateScalarComponent(
             m_buttonHandles[ALVR_INPUT_FINGER_INDEX], m_triggerValue, 0.0
         );
