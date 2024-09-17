@@ -248,9 +248,13 @@ bool Controller::onPoseUpdate(float predictionS, FfiHandData handData) {
     bool enabledAsHandTracker = handData.useHandTracker
         && (device_id == HAND_TRACKER_LEFT_ID || device_id == HAND_TRACKER_RIGHT_ID)
         && controllerMotion == nullptr;
+    bool enabledAsHandController = !handData.useHandTracker
+        && (device_id == HAND_LEFT_ID || device_id == HAND_RIGHT_ID) 
+        && handSkeleton != nullptr;
     bool enabledAsController = !handData.useHandTracker
-        && (device_id == HAND_LEFT_ID || device_id == HAND_RIGHT_ID) && controllerMotion != nullptr;
-    bool enabled = handData.tracked && (enabledAsHandTracker || enabledAsController);
+        && (device_id == HAND_LEFT_ID || device_id == HAND_RIGHT_ID) 
+        && controllerMotion != nullptr;
+    bool enabled = handData.tracked && (enabledAsHandTracker || enabledAsHandController || enabledAsController);
 
     Debug(
         "%s %s: enabled: %d, ctrl: %d, hand: %d",
