@@ -29,7 +29,7 @@ Controller::Controller(uint64_t deviceID, vr::EVRSkeletalTrackingLevel skeletonL
     m_pose.qRotation = HmdQuaternion_Init(1, 0, 0, 0);
 
     m_lastHandPose = m_pose;
-    m_lastHandPose = m_pose;
+    m_lastControllerPose = m_pose;
 }
 
 //
