@@ -27,6 +27,9 @@ Controller::Controller(uint64_t deviceID, vr::EVRSkeletalTrackingLevel skeletonL
     m_pose.qDriverFromHeadRotation = HmdQuaternion_Init(1, 0, 0, 0);
     m_pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
     m_pose.qRotation = HmdQuaternion_Init(1, 0, 0, 0);
+
+    m_lastHandPose = m_pose;
+    m_lastHandPose = m_pose;
 }
 
 //
@@ -275,26 +278,10 @@ bool Controller::onPoseUpdate(float predictionS, FfiHandData handData) {
 
     pose.qDriverFromHeadRotation = HmdQuaternion_Init(1, 0, 0, 0);
     pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
+    
+    if (handSkeleton != nullptr) {
+        handTimeout = 0;
 
-    if (controllerMotion != nullptr) {
-        auto m = controllerMotion;
-
-        pose.qRotation = HmdQuaternion_Init(
-            m->orientation.w, m->orientation.x, m->orientation.y, m->orientation.z
-        );
-
-        pose.vecPosition[0] = m->position[0];
-        pose.vecPosition[1] = m->position[1];
-        pose.vecPosition[2] = m->position[2];
-
-        pose.vecVelocity[0] = m->linearVelocity[0];
-        pose.vecVelocity[1] = m->linearVelocity[1];
-        pose.vecVelocity[2] = m->linearVelocity[2];
-
-        pose.vecAngularVelocity[0] = m->angularVelocity[0];
-        pose.vecAngularVelocity[1] = m->angularVelocity[1];
-        pose.vecAngularVelocity[2] = m->angularVelocity[2];
-    } else if (handSkeleton != nullptr) {
         auto r = handSkeleton->jointRotations[0];
         pose.qRotation = HmdQuaternion_Init(r.w, r.x, r.y, r.z);
 
@@ -310,10 +297,51 @@ bool Controller::onPoseUpdate(float predictionS, FfiHandData handData) {
         pose.vecAngularVelocity[0] = 0;
         pose.vecAngularVelocity[1] = 0;
         pose.vecAngularVelocity[2] = 0;
+
+        m_lastHandPose = pose;
+    }
+    else if (controllerMotion != nullptr) {
+        auto m = controllerMotion;
+        
+        // Do not switch to hands instantly. Let hand tracking timeout and make sure controllers moved.
+        if (handTimeout != -1)
+        {
+            if (++handTimeout < 1000)  {
+                pose = m_lastHandPose;
+            } 
+            else if (m->linearVelocity[0] == m_lastControllerPose.vecVelocity[0]
+                && m->linearVelocity[1] == m_lastControllerPose.vecVelocity[1]
+                && m->linearVelocity[2] == m_lastControllerPose.vecVelocity[2]) {
+                pose = m_lastHandPose;
+            } 
+            else {
+                pose = m_lastHandPose;
+                handTimeout = -1;
+            }
+        }
+        else
+        {
+            pose.qRotation = HmdQuaternion_Init(
+                m->orientation.w, m->orientation.x, m->orientation.y, m->orientation.z
+            );
+
+            pose.vecPosition[0] = m->position[0];
+            pose.vecPosition[1] = m->position[1];
+            pose.vecPosition[2] = m->position[2];
+
+            pose.vecVelocity[0] = m->linearVelocity[0];
+            pose.vecVelocity[1] = m->linearVelocity[1];
+            pose.vecVelocity[2] = m->linearVelocity[2];
+
+            pose.vecAngularVelocity[0] = m->angularVelocity[0];
+            pose.vecAngularVelocity[1] = m->angularVelocity[1];
+            pose.vecAngularVelocity[2] = m->angularVelocity[2];
+
+            m_lastControllerPose = pose;
+        }
     }
 
     pose.poseTimeOffset = predictionS;
-
     m_pose = pose;
 
     vr::VRServerDriverHost()->TrackedDevicePoseUpdated(

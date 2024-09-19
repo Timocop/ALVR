@@ -89,6 +89,8 @@ private:
     vr::EVRSkeletalTrackingLevel m_skeletonLevel;
 
     vr::DriverPose_t m_pose;
+    vr::DriverPose_t m_lastHandPose;
+    vr::DriverPose_t m_lastControllerPose;
 
     // These variables are used for controller hand animation
     // todo: move to rust
@@ -97,6 +99,7 @@ private:
     std::set<uint64_t> m_currentTriggerTouch;
     float m_triggerValue = 0;
     float m_gripValue = 0;
+    int handTimeout = -1;
 
     bool isEnabled() { return m_pose.deviceIsConnected; }
 };
