@@ -1,38 +1,22 @@
-use alvr_common::{anyhow::Result, ToAny};
 use openxr::{self as xr, raw, sys};
 use std::ptr;
 
-impl super::ExtraExtensions {
-    pub fn supports_htc_eye_facial_tracking(
-        &self,
-        instance: &xr::Instance,
-        system: xr::SystemId,
-    ) -> bool {
-        self.get_props(instance, system, unsafe {
-            sys::SystemFacialTrackingPropertiesHTC::out(ptr::null_mut()).assume_init()
-        })
-        .map(|props| props.support_eye_facial_tracking.into())
-        .unwrap_or(false)
-    }
+pub struct FacialTrackerHTC {
+    handle: sys::FacialTrackerHTC,
+    ext_fns: raw::FacialTrackingHTC,
+    expression_count: usize,
+}
 
-    pub fn supports_htc_lip_facial_tracking(
-        &self,
-        instance: &xr::Instance,
-        system: xr::SystemId,
-    ) -> bool {
-        self.get_props(instance, system, unsafe {
-            sys::SystemFacialTrackingPropertiesHTC::out(ptr::null_mut()).assume_init()
-        })
-        .map(|props| props.support_lip_facial_tracking.into())
-        .unwrap_or(false)
-    }
-
-    pub fn create_facial_tracker_htc<G>(
-        &self,
+impl FacialTrackerHTC {
+    pub fn new<G>(
         session: &xr::Session<G>,
         facial_tracking_type: xr::FacialTrackingTypeHTC,
-    ) -> Result<FacialTrackerHTC> {
-        let ext_fns = self.ext_functions_ptrs.htc_facial_tracking.to_any()?;
+    ) -> xr::Result<Self> {
+        let ext_fns = session
+            .instance()
+            .exts()
+            .htc_facial_tracking
+            .ok_or(sys::Result::ERROR_EXTENSION_NOT_PRESENT)?;
 
         let mut handle = sys::FacialTrackerHTC::NULL;
         let info = sys::FacialTrackerCreateInfoHTC {
@@ -41,7 +25,7 @@ impl super::ExtraExtensions {
             facial_tracking_type,
         };
         unsafe {
-            super::to_any((ext_fns.create_facial_tracker)(
+            super::xr_res((ext_fns.create_facial_tracker)(
                 session.as_raw(),
                 &info,
                 &mut handle,
@@ -54,22 +38,14 @@ impl super::ExtraExtensions {
             sys::FACIAL_EXPRESSION_LIP_COUNT_HTC
         };
 
-        Ok(FacialTrackerHTC {
+        Ok(Self {
             handle,
             ext_fns,
             expression_count,
         })
     }
-}
 
-pub struct FacialTrackerHTC {
-    handle: sys::FacialTrackerHTC,
-    ext_fns: raw::FacialTrackingHTC,
-    expression_count: usize,
-}
-
-impl FacialTrackerHTC {
-    pub fn get_facial_expressions(&self) -> Result<Option<Vec<f32>>> {
+    pub fn get_facial_expressions(&self) -> xr::Result<Option<Vec<f32>>> {
         let mut weights = Vec::with_capacity(self.expression_count);
 
         let mut facial_expressions = sys::FacialExpressionsHTC {
@@ -82,7 +58,7 @@ impl FacialTrackerHTC {
         };
 
         unsafe {
-            super::to_any((self.ext_fns.get_facial_expressions)(
+            super::xr_res((self.ext_fns.get_facial_expressions)(
                 self.handle,
                 &mut facial_expressions,
             ))?;

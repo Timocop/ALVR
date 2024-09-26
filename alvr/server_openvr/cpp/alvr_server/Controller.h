@@ -38,7 +38,7 @@ public:
 
     void SetButton(uint64_t id, FfiButtonValue value);
 
-    bool onPoseUpdate(float predictionS, FfiHandData handData);
+    bool onPoseUpdate(uint64_t targetTimestampNs, float predictionS, FfiHandData handData);
 
     void GetBoneTransform(bool withController, vr::VRBoneTransform_t outBoneTransform[]);
 
@@ -91,6 +91,7 @@ private:
     vr::DriverPose_t m_pose;
     vr::DriverPose_t m_lastHandPose;
     vr::DriverPose_t m_lastControllerPose;
+    uint64_t m_poseTargetTimestampNs;
 
     // These variables are used for controller hand animation
     // todo: move to rust
