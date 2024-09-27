@@ -273,66 +273,22 @@ bool Controller::onPoseUpdate(uint64_t targetTimestampNs, float predictionS, Ffi
     pose.qDriverFromHeadRotation = HmdQuaternion_Init(1, 0, 0, 0);
     pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
     
-    if (handSkeleton != nullptr) {
-        handTimeout = 0;
-
-        auto r = handSkeleton->jointRotations[0];
-        pose.qRotation = HmdQuaternion_Init(r.w, r.x, r.y, r.z);
-
-        auto p = handSkeleton->jointPositions[0];
-        pose.vecPosition[0] = p[0];
-        pose.vecPosition[1] = p[1];
-        pose.vecPosition[2] = p[2];
-
-        // If possible, use the last stored m_pose and timestamp
-        // to calculate the velocities of the current pose.
-        double linearVelocity[3] = { 0.0, 0.0, 0.0 };
-        vr::HmdVector3d_t angularVelocity = { 0.0, 0.0, 0.0 };
-
-        pose.vecAngularVelocity[0] = 0;
-        pose.vecAngularVelocity[1] = 0;
-        pose.vecAngularVelocity[2] = 0;
-
-
-        if (m_pose.poseIsValid) {
-            double dt = ((double)targetTimestampNs - (double)m_poseTargetTimestampNs) / NS_PER_S;
-
-            if (dt > 0.0) {
-                linearVelocity[0] = (pose.vecPosition[0] - m_pose.vecPosition[0]) / dt;
-                linearVelocity[1] = (pose.vecPosition[1] - m_pose.vecPosition[1]) / dt;
-                linearVelocity[2] = (pose.vecPosition[2] - m_pose.vecPosition[2]) / dt;
-                angularVelocity = AngularVelocityBetweenQuats(m_pose.qRotation, pose.qRotation, dt);
-            }
-        }
-
-        pose.vecVelocity[0] = linearVelocity[0];
-        pose.vecVelocity[1] = linearVelocity[1];
-        pose.vecVelocity[2] = linearVelocity[2];
-
-        pose.vecAngularVelocity[0] = angularVelocity.v[0];
-        pose.vecAngularVelocity[1] = angularVelocity.v[1];
-        pose.vecAngularVelocity[2] = angularVelocity.v[2];
-
-        m_lastHandPose = pose;
-    }
-    else if (controllerMotion != nullptr) {
+    if (controllerMotion != nullptr) {
         auto m = controllerMotion;
-        
+
+        // Detect when the controller is idle.
+        bool controllerIdle = (m->linearVelocity[0] == m_lastControllerPose.vecVelocity[0]
+                            && m->linearVelocity[1] == m_lastControllerPose.vecVelocity[1]
+                            && m->linearVelocity[2] == m_lastControllerPose.vecVelocity[2]);
+
         // Do not switch to hands instantly. Let hand tracking timeout and make sure controllers moved.
         if (handTimeout != -1)
         {
-            if (++handTimeout < 1000)  {
-                pose = m_lastHandPose;
-            } 
-            else if (m->linearVelocity[0] == m_lastControllerPose.vecVelocity[0]
-                && m->linearVelocity[1] == m_lastControllerPose.vecVelocity[1]
-                && m->linearVelocity[2] == m_lastControllerPose.vecVelocity[2]) {
-                pose = m_lastHandPose;
-            } 
-            else {
-                pose = m_lastHandPose;
+            if (++handTimeout > 250 && !controllerIdle)  {
                 handTimeout = -1;
             }
+
+            pose = m_lastHandPose;
         }
         else
         {
@@ -354,6 +310,44 @@ bool Controller::onPoseUpdate(uint64_t targetTimestampNs, float predictionS, Ffi
 
             m_lastControllerPose = pose;
         }
+    }
+    else if (handSkeleton != nullptr) {
+        handTimeout = 0;
+
+        auto r = handSkeleton->jointRotations[0];
+        pose.qRotation = HmdQuaternion_Init(r.w, r.x, r.y, r.z);
+
+        auto p = handSkeleton->jointPositions[0];
+        pose.vecPosition[0] = p[0];
+        pose.vecPosition[1] = p[1];
+        pose.vecPosition[2] = p[2];
+
+        // If possible, use the last stored m_pose and timestamp
+        // to calculate the velocities of the current pose.
+        double linearVelocity[3] = { 0.0, 0.0, 0.0 };
+        vr::HmdVector3d_t angularVelocity = { 0.0, 0.0, 0.0 };
+
+        // $TODO Causes issues.
+        /*if (m_pose.poseIsValid) {
+            double dt = ((double)targetTimestampNs - (double)m_poseTargetTimestampNs) / NS_PER_S;
+
+            if (dt > 0.0) {
+                linearVelocity[0] = (pose.vecPosition[0] - m_pose.vecPosition[0]) / dt;
+                linearVelocity[1] = (pose.vecPosition[1] - m_pose.vecPosition[1]) / dt;
+                linearVelocity[2] = (pose.vecPosition[2] - m_pose.vecPosition[2]) / dt;
+                angularVelocity = AngularVelocityBetweenQuats(m_pose.qRotation, pose.qRotation, dt);
+            }
+        }*/
+
+        pose.vecVelocity[0] = linearVelocity[0];
+        pose.vecVelocity[1] = linearVelocity[1];
+        pose.vecVelocity[2] = linearVelocity[2];
+
+        pose.vecAngularVelocity[0] = angularVelocity.v[0];
+        pose.vecAngularVelocity[1] = angularVelocity.v[1];
+        pose.vecAngularVelocity[2] = angularVelocity.v[2];
+
+        m_lastHandPose = pose;
     }
 
     pose.poseTimeOffset = predictionS;
