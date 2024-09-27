@@ -7,7 +7,7 @@
 Stream VR games from your PC to your headset via Wi-Fi.  
 This is a fork of [ALVR](https://github.com/polygraphene/ALVR).
 
-### Direct download the lastest version:
+### Direct download to the lastest version:
 ### [Windows Launcher](https://github.com/alvr-org/ALVR/releases/latest/download/alvr_launcher_windows.zip) | [Linux Launcher](https://github.com/alvr-org/ALVR/releases/latest/download/alvr_launcher_linux.tar.gz)
 
 ## Compatibility

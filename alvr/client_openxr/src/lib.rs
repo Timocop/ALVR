@@ -252,7 +252,6 @@ pub fn entry_point() {
             foveated_encoding: platform != Platform::Unknown,
             encoder_high_profile: platform != Platform::Unknown,
             encoder_10_bits: platform != Platform::Unknown,
-            encoder_av1: platform == Platform::Quest3,
             encoder_av1: matches!(
                 platform,
                 Platform::Quest3 | Platform::Quest3S | Platform::Pico4Ultra
