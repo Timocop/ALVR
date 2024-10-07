@@ -96,7 +96,6 @@ private:
     // These variables are used for controller hand animation
     // todo: move to rust
     std::set<uint64_t> m_currentThumbTouch;
-    std::set<uint64_t> m_currentRestTouch;
     std::set<uint64_t> m_currentTriggerTouch;
     float m_triggerValue = 0;
     float m_gripValue = 0;
