@@ -265,7 +265,7 @@ bool Controller::onPoseUpdate(uint64_t targetTimestampNs, float predictionS, Ffi
 
     pose.qDriverFromHeadRotation = HmdQuaternion_Init(1, 0, 0, 0);
     pose.qWorldFromDriverRotation = HmdQuaternion_Init(1, 0, 0, 0);
-    
+
     if (controllerMotion != nullptr) {
         auto m = controllerMotion;
 
@@ -446,37 +446,39 @@ bool Controller::onPoseUpdate(uint64_t targetTimestampNs, float predictionS, Ffi
             );
         }
 
-        vr::VRBoneTransform_t boneTransforms[HandSkeletonBone::eBone_Count];
+        if(handTimeout == -1) {
+            vr::VRBoneTransform_t boneTransforms[HandSkeletonBone::eBone_Count];
 
-        // Perform whatever logic is necessary to convert your device's input into a
-        // skeletal pose, first to create a pose "With Controller", that is as close to the
-        // pose of the user's real hand as possible
-        GetBoneTransform(true, boneTransforms);
+            // Perform whatever logic is necessary to convert your device's input into a
+            // skeletal pose, first to create a pose "With Controller", that is as close to the
+            // pose of the user's real hand as possible
+            GetBoneTransform(true, boneTransforms);
 
-        // Then update the WithController pose on the component with those transforms
-        vr::EVRInputError err = vr_driver_input->UpdateSkeletonComponent(
-            m_compSkeleton,
-            vr::VRSkeletalMotionRange_WithController,
-            boneTransforms,
-            HandSkeletonBone::eBone_Count
-        );
-        if (err != vr::VRInputError_None) {
-            // Handle failure case
-            Error("UpdateSkeletonComponentfailed.  Error: %i\n", err);
-        }
+            // Then update the WithController pose on the component with those transforms
+            vr::EVRInputError err = vr_driver_input->UpdateSkeletonComponent(
+                m_compSkeleton,
+                vr::VRSkeletalMotionRange_WithController,
+                boneTransforms,
+                HandSkeletonBone::eBone_Count
+            );
+            if (err != vr::VRInputError_None) {
+                // Handle failure case
+                Error("UpdateSkeletonComponentfailed.  Error: %i\n", err);
+            }
 
-        GetBoneTransform(false, boneTransforms);
+            GetBoneTransform(false, boneTransforms);
 
-        // Then update the WithoutController pose on the component
-        err = vr_driver_input->UpdateSkeletonComponent(
-            m_compSkeleton,
-            vr::VRSkeletalMotionRange_WithoutController,
-            boneTransforms,
-            HandSkeletonBone::eBone_Count
-        );
-        if (err != vr::VRInputError_None) {
-            // Handle failure case
-            Error("UpdateSkeletonComponentfailed.  Error: %i\n", err);
+            // Then update the WithoutController pose on the component
+            err = vr_driver_input->UpdateSkeletonComponent(
+                m_compSkeleton,
+                vr::VRSkeletalMotionRange_WithoutController,
+                boneTransforms,
+                HandSkeletonBone::eBone_Count
+            );
+            if (err != vr::VRInputError_None) {
+                // Handle failure case
+                Error("UpdateSkeletonComponentfailed.  Error: %i\n", err);
+            }
         }
     }
 
@@ -484,29 +486,11 @@ bool Controller::onPoseUpdate(uint64_t targetTimestampNs, float predictionS, Ffi
 }
 
 void GetThumbBoneTransform(
-    bool withController, bool isLeftHand, std::set<uint64_t> touch, bool click, vr::VRBoneTransform_t outBoneTransform[]
+    bool withController, bool isLeftHand, bool touch, vr::VRBoneTransform_t outBoneTransform[]
 ) {
-     if (isLeftHand) {
-        if (touch.find(LEFT_Y_TOUCH_ID) != touch.end()) {
-            // y touch
-            if (withController) {
-                outBoneTransform[2] = {{-0.017303f, 0.032567f, 0.025281f, 1.f},
-                                       {0.317609f, 0.528344f, 0.213134f, 0.757991f}};
-                outBoneTransform[3] = {{0.040406f, 0.000000f, -0.000000f, 1.f},
-                                       {0.991742f, 0.085317f, 0.019416f, 0.093765f}};
-                outBoneTransform[4] = {{0.032517f, -0.000000f, 0.000000f, 1.f},
-                                       {0.959385f, -0.012202f, -0.031055f, 0.280120f}};
-            } else {
-                outBoneTransform[2] = {{-0.016426f, 0.030866f, 0.025118f, 1.f},
-                                       {0.403850f, 0.595704f, 0.082451f, 0.689380f}};
-                outBoneTransform[3] = {{0.040406f, 0.000000f, -0.000000f, 1.f},
-                                       {0.989655f, -0.090426f, 0.028457f, 0.107691f}};
-                outBoneTransform[4] = {{0.032517f, 0.000000f, 0.000000f, 1.f},
-                                       {0.988590f, 0.143978f, 0.041520f, 0.015363f}};
-            }
-        } else if (touch.find(LEFT_X_TOUCH_ID) != touch.end()) {
-            // x touch
-            if (withController) {
+    if (isLeftHand) {
+        if (touch) {
+             if (withController) {
                 outBoneTransform[2] = {{-0.017625f, 0.031098f, 0.022755f, 1},
                                        {0.388513f, 0.527438f, 0.249444f, 0.713193f}};
                 outBoneTransform[3] = {{0.040406f, 0.000000f, -0.000000f, 1},
@@ -521,55 +505,28 @@ void GetThumbBoneTransform(
                 outBoneTransform[4] = {{0.032517f, 0.000000f, 0.000000f, 1},
                                        {0.794064f, 0.084451f, -0.037468f, 0.600772f}};
             }
-        } else if (touch.find(LEFT_THUMBSTICK_TOUCH_ID) != touch.end()) {
-            // joy touch
-            if (withController) {
-                outBoneTransform[2] = {{-0.017914f, 0.029178f, 0.025298f, 1},
-                                       {0.455126f, 0.591760f, 0.168152f, 0.643743f}};
-                outBoneTransform[3] = {{0.040406f, 0.000000f, -0.000000f, 1},
-                                       {0.969878f, 0.084444f, 0.045679f, 0.223873f}};
-                outBoneTransform[4] = {{0.032517f, -0.000000f, 0.000000f, 1},
-                                       {0.991257f, 0.014384f, -0.005602f, 0.131040f}};
-            } else {
-                outBoneTransform[2] = {{-0.017914f, 0.029178f, 0.025298f, 1},
-                                       {0.455126f, 0.591760f, 0.168152f, 0.643743f}};
-                outBoneTransform[3] = {{0.040406f, 0.000000f, -0.000000f, 1},
-                                       {0.969878f, 0.084444f, 0.045679f, 0.223873f}};
-                outBoneTransform[4] = {{0.032517f, -0.000000f, 0.000000f, 1},
-                                       {0.991257f, 0.014384f, -0.005602f, 0.131040f}};
-            }
         } else {
-            // no touch
-            outBoneTransform[2] = {{-0.012083f, 0.028070f, 0.025050f, 1},
-                                   {0.464112f, 0.567418f, 0.272106f, 0.623374f}};
-            outBoneTransform[3] = {{0.040406f, 0.000000f, -0.000000f, 1},
-                                   {0.994838f, 0.082939f, 0.019454f, 0.055130f}};
-            outBoneTransform[4] = {{0.032517f, 0.000000f, 0.000000f, 1},
-                                   {0.974793f, -0.003213f, 0.021867f, -0.222015f}};
+            if (withController) {
+                outBoneTransform[2] = { { -0.017303f, 0.032567f, 0.025281f, 1.f },
+                                        { 0.317609f, 0.528344f, 0.213134f, 0.757991f } };
+                outBoneTransform[3] = { { 0.040406f, 0.000000f, -0.000000f, 1.f },
+                                        { 0.991742f, 0.085317f, 0.019416f, 0.093765f } };
+                outBoneTransform[4] = { { 0.032517f, -0.000000f, 0.000000f, 1.f },
+                                        { 0.959385f, -0.012202f, -0.031055f, 0.280120f } };
+            } else {
+                outBoneTransform[2] = { { -0.016426f, 0.030866f, 0.025118f, 1.f },
+                                        { 0.403850f, 0.595704f, 0.082451f, 0.689380f } };
+                outBoneTransform[3] = { { 0.040406f, 0.000000f, -0.000000f, 1.f },
+                                        { 0.989655f, -0.090426f, 0.028457f, 0.107691f } };
+                outBoneTransform[4] = { { 0.032517f, 0.000000f, 0.000000f, 1.f },
+                                        { 0.988590f, 0.143978f, 0.041520f, 0.015363f } };
+            }
         }
 
-        outBoneTransform[5] = {{0.030464f, -0.000000f, -0.000000f, 1},
-                               {1.000000f, -0.000000f, 0.000000f, 0.000000f}};
+        outBoneTransform[5] = { { 0.030464f, -0.000000f, -0.000000f, 1 },
+                                { 1.000000f, -0.000000f, 0.000000f, 0.000000f } };
     } else {
-        if (touch.find(RIGHT_B_TOUCH_ID) != touch.end()) {
-            // b touch
-            if (withController) {
-                outBoneTransform[2] = {{0.017303f, 0.032567f, 0.025281f, 1},
-                                       {0.528344f, -0.317609f, 0.757991f, -0.213134f}};
-                outBoneTransform[3] = {{-0.040406f, -0.000000f, 0.000000f, 1},
-                                       {0.991742f, 0.085317f, 0.019416f, 0.093765f}};
-                outBoneTransform[4] = {{-0.032517f, 0.000000f, -0.000000f, 1},
-                                       {0.959385f, -0.012202f, -0.031055f, 0.280120f}};
-            } else {
-                outBoneTransform[2] = {{0.016426f, 0.030866f, 0.025118f, 1},
-                                       {0.595704f, -0.403850f, 0.689380f, -0.082451f}};
-                outBoneTransform[3] = {{-0.040406f, -0.000000f, 0.000000f, 1},
-                                       {0.989655f, -0.090426f, 0.028457f, 0.107691f}};
-                outBoneTransform[4] = {{-0.032517f, -0.000000f, -0.000000f, 1},
-                                       {0.988590f, 0.143978f, 0.041520f, 0.015363f}};
-            }
-        } else if (touch.find(RIGHT_A_TOUCH_ID) != touch.end()) {
-            // a touch
+        if (touch) {
             if (withController) {
                 outBoneTransform[2] = {{0.017625f, 0.031098f, 0.022755f, 1},
                                        {0.527438f, -0.388513f, 0.713193f, -0.249444f}};
@@ -585,35 +542,26 @@ void GetThumbBoneTransform(
                 outBoneTransform[4] = {{-0.032517f, -0.000000f, -0.000000f, 1},
                                        {0.794064f, 0.084451f, -0.037468f, 0.600772f}};
             }
-        } else if (touch.find(RIGHT_THUMBREST_TOUCH_ID) != touch.end()) {
-            // joy touch
-            if (withController) {
-                outBoneTransform[2] = {{0.017914f, 0.029178f, 0.025298f, 1},
-                                       {0.591760f, -0.455126f, 0.643743f, -0.168152f}};
-                outBoneTransform[3] = {{-0.040406f, -0.000000f, 0.000000f, 1},
-                                       {0.969878f, 0.084444f, 0.045679f, 0.223873f}};
-                outBoneTransform[4] = {{-0.032517f, 0.000000f, -0.000000f, 1},
-                                       {0.991257f, 0.014384f, -0.005602f, 0.131040f}};
-            } else {
-                outBoneTransform[2] = {{0.017914f, 0.029178f, 0.025298f, 1},
-                                       {0.591760f, -0.455126f, 0.643743f, -0.168152f}};
-                outBoneTransform[3] = {{-0.040406f, -0.000000f, 0.000000f, 1},
-                                       {0.969878f, 0.084444f, 0.045679f, 0.223873f}};
-                outBoneTransform[4] = {{-0.032517f, 0.000000f, -0.000000f, 1},
-                                       {0.991257f, 0.014384f, -0.005602f, 0.131040f}};
-            }
         } else {
-            // no touch
-            outBoneTransform[2] = {{0.012330f, 0.028661f, 0.025049f, 1},
-                                   {0.571059f, -0.451277f, 0.630056f, -0.270685f}};
-            outBoneTransform[3] = {{-0.040406f, -0.000000f, 0.000000f, 1},
-                                   {0.994565f, 0.078280f, 0.018282f, 0.066177f}};
-            outBoneTransform[4] = {{-0.032517f, -0.000000f, -0.000000f, 1},
-                                   {0.977658f, -0.003039f, 0.020722f, -0.209156f}};
+            if (withController) {
+                outBoneTransform[2] = { { 0.017303f, 0.032567f, 0.025281f, 1 },
+                                        { 0.528344f, -0.317609f, 0.757991f, -0.213134f } };
+                outBoneTransform[3] = { { -0.040406f, -0.000000f, 0.000000f, 1 },
+                                        { 0.991742f, 0.085317f, 0.019416f, 0.093765f } };
+                outBoneTransform[4] = { { -0.032517f, 0.000000f, -0.000000f, 1 },
+                                        { 0.959385f, -0.012202f, -0.031055f, 0.280120f } };
+            } else {
+                outBoneTransform[2] = { { 0.016426f, 0.030866f, 0.025118f, 1 },
+                                        { 0.595704f, -0.403850f, 0.689380f, -0.082451f } };
+                outBoneTransform[3] = { { -0.040406f, -0.000000f, 0.000000f, 1 },
+                                        { 0.989655f, -0.090426f, 0.028457f, 0.107691f } };
+                outBoneTransform[4] = { { -0.032517f, -0.000000f, -0.000000f, 1 },
+                                        { 0.988590f, 0.143978f, 0.041520f, 0.015363f } };
+            }
         }
 
-        outBoneTransform[5] = {{-0.030464f, 0.000000f, 0.000000f, 1},
-                               {1.000000f, -0.000000f, 0.000000f, 0.000000f}};
+        outBoneTransform[5] = { { -0.030464f, 0.000000f, 0.000000f, 1 },
+                                { 1.000000f, -0.000000f, 0.000000f, 0.000000f } };
     }
 }
 
@@ -1337,7 +1285,7 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
 
     // reset
     GetTriggerBoneTransform(withController, isLeftHand, false, false, boneTransform1);
-    GetThumbBoneTransform(withController, isLeftHand, m_currentThumbTouch, false, boneTransform2);
+    GetThumbBoneTransform(withController, isLeftHand, false, boneTransform2);
     for (int boneIdx = HandSkeletonBone::eBone_IndexFinger0; boneIdx < HandSkeletonBone::eBone_Count; boneIdx++) {
         outBoneTransform[boneIdx].position = boneTransform1[boneIdx].position;
         outBoneTransform[boneIdx].orientation = boneTransform1[boneIdx].orientation;
@@ -1375,7 +1323,7 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
     // thumb
     if (m_currentThumbTouch.size() > 0) {
         // relaxed/curled thumb
-        GetThumbBoneTransform(withController, isLeftHand, m_currentThumbTouch, true, boneTransform1);
+        GetThumbBoneTransform(withController, isLeftHand, true, boneTransform1);
         for (int boneIdx = HandSkeletonBone::eBone_Thumb0; boneIdx <= HandSkeletonBone::eBone_Thumb3; boneIdx++) {
             outBoneTransform[boneIdx].position = boneTransform1[boneIdx].position;
             outBoneTransform[boneIdx].orientation = boneTransform1[boneIdx].orientation;
@@ -1392,7 +1340,7 @@ void Controller::GetBoneTransform(bool withController, vr::VRBoneTransform_t out
             outBoneTransform[boneIdx].orientation = boneTransform1[boneIdx].orientation;
         }
     } else {
-        GetThumbBoneTransform(withController, isLeftHand, m_currentThumbTouch, false, boneTransform1);
+        GetThumbBoneTransform(withController, isLeftHand, false, boneTransform1);
         for (int boneIdx = HandSkeletonBone::eBone_Thumb0; boneIdx <= HandSkeletonBone::eBone_Thumb3; boneIdx++) {
             outBoneTransform[boneIdx].position = boneTransform1[boneIdx].position;
             outBoneTransform[boneIdx].orientation = boneTransform1[boneIdx].orientation;
