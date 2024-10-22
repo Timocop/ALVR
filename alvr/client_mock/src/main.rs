@@ -2,7 +2,7 @@ use alvr_client_core::{ClientCapabilities, ClientCoreContext, ClientCoreEvent};
 use alvr_common::{
     glam::{Quat, UVec2, Vec3},
     parking_lot::RwLock,
-    Fov, Pose, RelaxedAtomic,
+    DeviceMotion, Fov, Pose, RelaxedAtomic, HEAD_ID,
 };
 use alvr_packets::{FaceData, ViewParams};
 use alvr_session::CodecType;
@@ -146,6 +146,17 @@ fn tracking_thread(
 ) {
     let timestamp_origin = Instant::now();
 
+    let views_params = ViewParams {
+        pose: Pose::default(),
+        fov: Fov {
+            left: -1.0,
+            right: 1.0,
+            up: 1.0,
+            down: -1.0,
+        },
+    };
+    context.send_view_params([views_params.clone(), views_params]);
+
     let mut loop_deadline = Instant::now();
     while streaming.value() {
         let input_lock = input.read();
@@ -159,23 +170,19 @@ fn tracking_thread(
 
         let position = Vec3::new(0.0, input_lock.height, 0.0);
 
-        let views_params = ViewParams {
-            pose: Pose {
-                orientation,
-                position,
-            },
-            fov: Fov {
-                left: -1.0,
-                right: 1.0,
-                up: 1.0,
-                down: -1.0,
-            },
-        };
-
         context.send_tracking(
-            Instant::now() - timestamp_origin + context.get_head_prediction_offset(),
-            [views_params, views_params],
-            vec![],
+            Instant::now() - timestamp_origin,
+            vec![(
+                *HEAD_ID,
+                DeviceMotion {
+                    pose: Pose {
+                        orientation,
+                        position,
+                    },
+                    linear_velocity: Vec3::ZERO,
+                    angular_velocity: Vec3::ZERO,
+                },
+            )],
             [None, None],
             FaceData {
                 eye_gazes: [None, None],
@@ -198,12 +205,15 @@ fn client_thread(
 ) {
     let capabilities = ClientCapabilities {
         default_view_resolution: UVec2::new(1920, 1832),
-        external_decoder: true,
         refresh_rates: vec![60.0, 72.0, 80.0, 90.0, 120.0],
         foveated_encoding: false,
         encoder_high_profile: false,
         encoder_10_bits: false,
         encoder_av1: false,
+        prefer_10bit: false,
+        prefer_full_range: true,
+        preferred_encoding_gamma: 1.0,
+        prefer_hdr: false,
     };
     let client_core_context = Arc::new(ClientCoreContext::new(capabilities));
 
@@ -262,16 +272,6 @@ fn client_thread(
                     got_decoder_config.set(true);
 
                     window_output.decoder_codec = Some(codec);
-                }
-                ClientCoreEvent::FrameReady { timestamp, .. } => {
-                    if streaming.value() && !got_decoder_config.value() {
-                        client_core_context.request_idr();
-                    }
-
-                    window_output.current_frame_timestamp = timestamp;
-
-                    thread::sleep(Duration::from_millis(input_lock.emulated_decode_ms));
-                    client_core_context.report_frame_decoded(timestamp);
                 }
             }
 

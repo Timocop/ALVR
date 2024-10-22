@@ -20,16 +20,8 @@ use extra_extensions::{
 };
 use lobby::Lobby;
 use openxr as xr;
-use std::{
-    path::Path,
-    rc::Rc,
-    sync::Arc,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{path::Path, rc::Rc, sync::Arc, thread, time::Duration};
 use stream::StreamContext;
-
-const DECODER_MAX_TIMEOUT_MULTIPLIER: f32 = 0.8;
 
 fn from_xr_vec3(v: xr::Vector3f) -> Vec3 {
     Vec3::new(v.x, v.y, v.z)
@@ -126,7 +118,7 @@ pub fn entry_point() {
 
     let loader_suffix = match platform {
         Platform::Quest1 => "_quest1",
-        Platform::PicoNeo3 | Platform::Pico4 => "_pico",
+        p if p.is_pico() => "_pico",
         Platform::Yvr => "_yvr",
         Platform::Lynx => "_lynx",
         _ => "",
@@ -247,12 +239,18 @@ pub fn entry_point() {
 
         let capabilities = ClientCapabilities {
             default_view_resolution,
-            external_decoder: false,
             refresh_rates,
             foveated_encoding: platform != Platform::Unknown,
             encoder_high_profile: platform != Platform::Unknown,
             encoder_10_bits: platform != Platform::Unknown,
-            encoder_av1: platform == Platform::Quest3,
+            encoder_av1: matches!(
+                platform,
+                Platform::Quest3 | Platform::Quest3S | Platform::Pico4Ultra
+            ),
+            prefer_10bit: false,
+            prefer_full_range: true,
+            preferred_encoding_gamma: 1.0,
+            prefer_hdr: false,
         };
         let core_context = Arc::new(ClientCoreContext::new(capabilities));
 
@@ -318,8 +316,8 @@ pub fn entry_point() {
 
                         lobby.update_reference_space();
 
-                        if let Some(context) = &mut stream_context {
-                            context.update_reference_space();
+                        if let Some(stream) = &mut stream_context {
+                            stream.update_reference_space();
                         }
                     }
                     xr::Event::PerfSettingsEXT(event) => {
@@ -358,11 +356,7 @@ pub fn entry_point() {
                         // combined_eye_gaze is a setting that needs to be enabled at session
                         // creation. Since HTC headsets don't support session reinitialization, skip
                         // all elements that need it, that is face and eye tracking.
-                        if parsed_stream_config.as_ref() != Some(&new_config)
-                            && !matches!(
-                                platform,
-                                Platform::Focus3 | Platform::XRElite | Platform::ViveUnknown
-                            )
+                        if parsed_stream_config.as_ref() != Some(&new_config) && !platform.is_vive()
                         {
                             parsed_stream_config = Some(new_config);
 
@@ -374,15 +368,13 @@ pub fn entry_point() {
                                 Rc::clone(&graphics_context),
                                 Arc::clone(&interaction_context),
                                 platform,
-                                &new_config,
+                                new_config.clone(),
                             ));
 
                             parsed_stream_config = Some(new_config);
                         }
                     }
-                    ClientCoreEvent::StreamingStopped => {
-                        stream_context = None;
-                    }
+                    ClientCoreEvent::StreamingStopped => stream_context = None,
                     ClientCoreEvent::Haptics {
                         device_id,
                         duration,
@@ -406,8 +398,10 @@ pub fn entry_point() {
                             )
                             .unwrap();
                     }
-                    ClientCoreEvent::DecoderConfig { .. } | ClientCoreEvent::FrameReady { .. } => {
-                        panic!()
+                    ClientCoreEvent::DecoderConfig { codec, config_nal } => {
+                        if let Some(stream) = &mut stream_context {
+                            stream.maybe_initialize_decoder(codec, config_nal);
+                        }
                     }
                 }
             }
@@ -439,29 +433,10 @@ pub fn entry_point() {
             }
 
             // todo: allow rendering lobby and stream layers at the same time and add cross fade
-            let (layer, display_time) = if let Some(context) = &mut stream_context {
-                let frame_poll_deadline = Instant::now()
-                    + Duration::from_secs_f32(
-                        frame_interval.as_secs_f32() * DECODER_MAX_TIMEOUT_MULTIPLIER,
-                    );
-                let mut frame_result = None;
-                while frame_result.is_none() && Instant::now() < frame_poll_deadline {
-                    frame_result = core_context.get_frame();
-                    thread::yield_now();
-                }
-
-                let timestamp = frame_result
-                    .as_ref()
-                    .map(|r| r.timestamp)
-                    .unwrap_or(vsync_time);
-
-                let layer = context.render(frame_result, vsync_time);
-
-                (layer, timestamp)
+            let (layer, display_time) = if let Some(stream) = &mut stream_context {
+                stream.render(frame_interval, vsync_time)
             } else {
-                let layer = lobby.render(frame_state.predicted_display_time);
-
-                (layer, vsync_time)
+                (lobby.render(frame_state.predicted_display_time), vsync_time)
             };
 
             graphics_context.make_current();
@@ -475,13 +450,15 @@ pub fn entry_point() {
                 let time = to_xr_time(display_time);
                 error!("End frame failed! {e}, timestamp: {display_time:?}, time: {time:?}");
 
-                xr_frame_stream
-                    .end(
-                        frame_state.predicted_display_time,
-                        xr::EnvironmentBlendMode::OPAQUE,
-                        &[],
-                    )
-                    .unwrap();
+                if !platform.is_vive() {
+                    xr_frame_stream
+                        .end(
+                            frame_state.predicted_display_time,
+                            xr::EnvironmentBlendMode::OPAQUE,
+                            &[],
+                        )
+                        .unwrap();
+                }
             }
         }
     }
@@ -490,10 +467,11 @@ pub fn entry_point() {
 }
 
 #[allow(unused)]
-fn xr_runtime_now(xr_instance: &xr::Instance) -> Option<Duration> {
-    let time_nanos = xr_instance.now().ok()?.as_nanos();
-
-    (time_nanos > 0).then(|| Duration::from_nanos(time_nanos as _))
+fn xr_runtime_now(xr_instance: &xr::Instance) -> Option<xr::Time> {
+    xr_instance
+        .now()
+        .ok()
+        .filter(|&time_nanos| time_nanos.as_nanos() > 0)
 }
 
 #[cfg(target_os = "android")]
