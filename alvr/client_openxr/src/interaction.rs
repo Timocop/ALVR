@@ -8,11 +8,13 @@ use crate::{
     Platform, XrContext,
 };
 use alvr_common::{glam::Vec3, *};
-use alvr_packets::{ButtonEntry, ButtonValue};
+use alvr_packets::{ButtonEntry, ButtonValue, ViewParams};
 use alvr_session::{BodyTrackingSourcesConfig, FaceTrackingSourcesConfig};
 use openxr as xr;
 use std::collections::HashMap;
 use xr::SpaceLocationFlags;
+
+const IPD_CHANGE_EPS: f32 = 0.001;
 
 pub enum ButtonAction {
     Binary(xr::Action<bool>),
@@ -61,14 +63,14 @@ pub fn initialize_interaction(
     #[cfg(target_os = "android")]
     if let Some(config) = &face_tracking_sources {
         if (config.combined_eye_gaze || config.eye_tracking_fb)
-            && matches!(platform, Platform::Quest3 | Platform::QuestPro)
+            && matches!(platform, Platform::QuestPro)
         {
             alvr_client_core::try_get_permission("com.oculus.permission.EYE_TRACKING")
         }
-        if config.combined_eye_gaze && matches!(platform, Platform::Pico4 | Platform::PicoNeo3) {
+        if config.combined_eye_gaze && platform.is_pico() {
             alvr_client_core::try_get_permission("com.picovr.permission.EYE_TRACKING")
         }
-        if config.face_tracking_fb && matches!(platform, Platform::Quest3 | Platform::QuestPro) {
+        if config.face_tracking_fb && matches!(platform, Platform::QuestPro) {
             alvr_client_core::try_get_permission("android.permission.RECORD_AUDIO");
             alvr_client_core::try_get_permission("com.oculus.permission.FACE_TRACKING")
         }
@@ -77,7 +79,8 @@ pub fn initialize_interaction(
     #[cfg(target_os = "android")]
     if let Some(config) = &body_tracking_sources {
         if (config.body_tracking_fb.enabled())
-            && matches!(platform, Platform::Quest3 | Platform::QuestPro)
+            && platform.is_quest()
+            && platform != Platform::Quest1
         {
             alvr_client_core::try_get_permission("com.oculus.permission.BODY_TRACKING")
         }
@@ -95,16 +98,10 @@ pub fn initialize_interaction(
     }
 
     let controllers_profile_path = match platform {
-        Platform::Quest1
-        | Platform::Quest2
-        | Platform::Quest3
-        | Platform::QuestPro
-        | Platform::QuestUnknown => QUEST_CONTROLLER_PROFILE_PATH, // todo: create new controller profile for quest pro and 3
+        p if p.is_quest() => QUEST_CONTROLLER_PROFILE_PATH, // todo: create new controller profile for quest pro and 3
         Platform::PicoNeo3 => PICO_NEO3_CONTROLLER_PROFILE_PATH,
         Platform::Pico4 => PICO4_CONTROLLER_PROFILE_PATH,
-        Platform::Focus3 | Platform::XRElite | Platform::ViveUnknown => {
-            FOCUS3_CONTROLLER_PROFILE_PATH
-        }
+        p if p.is_vive() => FOCUS3_CONTROLLER_PROFILE_PATH,
         Platform::Yvr => YVR_CONTROLLER_PROFILE_PATH,
         _ => QUEST_CONTROLLER_PROFILE_PATH,
     };
@@ -412,6 +409,76 @@ pub fn get_reference_space(
     xr_session
         .create_reference_space(ty, xr::Posef::IDENTITY)
         .unwrap()
+}
+
+pub fn get_head_data(
+    xr_session: &xr::Session<xr::OpenGlEs>,
+    reference_space: &xr::Space,
+    time: xr::Time,
+    last_ipd_m: &mut f32,
+) -> Option<(DeviceMotion, Option<[ViewParams; 2]>)> {
+    let (head_location, head_velocity) = xr_session
+        .create_reference_space(xr::ReferenceSpaceType::VIEW, xr::Posef::IDENTITY)
+        .ok()?
+        .relate(&reference_space, time)
+        .ok()?;
+
+    if !head_location
+        .location_flags
+        .contains(xr::SpaceLocationFlags::ORIENTATION_VALID)
+    {
+        return None;
+    }
+
+    let (view_flags, views) = xr_session
+        .locate_views(
+            xr::ViewConfigurationType::PRIMARY_STEREO,
+            time,
+            &reference_space,
+        )
+        .ok()?;
+
+    if !view_flags.contains(xr::ViewStateFlags::POSITION_VALID)
+        || !view_flags.contains(xr::ViewStateFlags::ORIENTATION_VALID)
+    {
+        return None;
+    }
+
+    let motion = DeviceMotion {
+        pose: crate::from_xr_pose(head_location.pose),
+        linear_velocity: head_velocity
+            .velocity_flags
+            .contains(xr::SpaceVelocityFlags::LINEAR_VALID)
+            .then(|| crate::from_xr_vec3(head_velocity.linear_velocity))
+            .unwrap_or_default(),
+        angular_velocity: head_velocity
+            .velocity_flags
+            .contains(xr::SpaceVelocityFlags::ANGULAR_VALID)
+            .then(|| crate::from_xr_vec3(head_velocity.angular_velocity))
+            .unwrap_or_default(),
+    };
+
+    let ipd_m = (crate::from_xr_vec3(views[1].pose.position)
+        - crate::from_xr_vec3(views[0].pose.position))
+    .length();
+    let view_params = if f32::abs(ipd_m - *last_ipd_m) > IPD_CHANGE_EPS {
+        *last_ipd_m = ipd_m;
+
+        Some([
+            ViewParams {
+                pose: motion.pose.inverse() * crate::from_xr_pose(views[0].pose),
+                fov: crate::from_xr_fov(views[0].fov),
+            },
+            ViewParams {
+                pose: motion.pose.inverse() * crate::from_xr_pose(views[1].pose),
+                fov: crate::from_xr_fov(views[1].fov),
+            },
+        ])
+    } else {
+        None
+    };
+
+    Some((motion, view_params))
 }
 
 pub fn get_hand_data(
