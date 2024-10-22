@@ -224,32 +224,18 @@ CABAC produces better compression but it's significantly slower and may lead to 
     pub entropy_coding: EntropyCoding,
 
     #[schema(strings(
-        display_name = "10-bit encoding",
-        help = "Sets the encoder to use 10 bits per channel instead of 8, if the client has no preference. Does not work on Linux with Nvidia"
+        display_name = "10 bit encoding",
+        help = "Sets the encoder to use 10 bits per channel instead of 8. Does not work on Linux with Nvidia"
     ))]
     #[schema(flag = "steamvr-restart")]
     pub use_10bit: bool,
 
     #[schema(strings(
-        display_name = "Override headset's preference for 10-bit encoding",
-        help = "Override the headset client's preference for 10-bit encoding."
-    ))]
-    #[schema(flag = "steamvr-restart")]
-    pub server_overrides_use_10bit: bool,
-
-    #[schema(strings(
         display_name = "Full range color",
-        help = "Sets the encoder to encode full range RGB (0-255) instead of limited/video range RGB (16-235), if the client has no preference"
+        help = "Sets the encoder to encode full range RGB (0-255) instead of limited/video range RGB (16-235)"
     ))]
     #[schema(flag = "steamvr-restart")]
     pub use_full_range: bool,
-
-    #[schema(strings(
-        display_name = "Override headset's preference for full range color",
-        help = "The server will override the headset client's preference for full range color."
-    ))]
-    #[schema(flag = "steamvr-restart")]
-    pub server_overrides_use_full_range: bool,
 
     #[schema(strings(
         display_name = "Encoding Gamma",
@@ -259,25 +245,11 @@ CABAC produces better compression but it's significantly slower and may lead to 
     pub encoding_gamma: f32,
 
     #[schema(strings(
-        display_name = "Override headset's preference for encoding gamma",
-        help = "The server will override the headset client's preference for encoding gamma."
-    ))]
-    #[schema(flag = "steamvr-restart")]
-    pub server_overrides_encoding_gamma: bool,
-
-    #[schema(strings(
         display_name = "Enable HDR",
-        help = "If the client has no preference, enables compositing VR layers to an RGBA float16 framebuffer, and doing sRGB/YUV conversions in shader code."
+        help = "Composite VR layers to an RGBA float16 framebuffer, and do sRGB/YUV conversions in shader code."
     ))]
     #[schema(flag = "steamvr-restart")]
     pub enable_hdr: bool,
-
-    #[schema(strings(
-        display_name = "Override headset's preference for HDR",
-        help = "The server will override the headset client's preference for HDR."
-    ))]
-    #[schema(flag = "steamvr-restart")]
-    pub server_overrides_enable_hdr: bool,
 
     #[schema(strings(
         display_name = "Force HDR sRGB Correction",
@@ -304,7 +276,7 @@ CABAC produces better compression but it's significantly slower and may lead to 
     pub software: SoftwareEncodingConfig,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, Debug)]
 pub enum MediacodecDataType {
     Float(f32),
     Int32(i32),
@@ -367,12 +339,12 @@ pub enum BitrateMode {
         #[schema(strings(display_name = "Maximum bitrate"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 1, max = 1000, logarithmic)), suffix = "Mbps")]
-        max_throughput_mbps: Switch<u64>,
+        max_bitrate_mbps: Switch<u64>,
 
         #[schema(strings(display_name = "Minimum bitrate"))]
         #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 1, max = 100, logarithmic)), suffix = "Mbps")]
-        min_throughput_mbps: Switch<u64>,
+        min_bitrate_mbps: Switch<u64>,
 
         #[schema(strings(display_name = "Maximum network latency"))]
         #[schema(flag = "real-time")]
@@ -516,7 +488,7 @@ pub enum CodecType {
     H264 = 0,
     #[schema(strings(display_name = "HEVC"))]
     Hevc = 1,
-    #[schema(strings(display_name = "AV1"))]
+    #[schema(strings(display_name = "AV1 (AMD only)"))]
     AV1 = 2,
 }
 
@@ -1118,10 +1090,11 @@ This could happen on TCP. A IDR frame is requested in this case."#
     #[schema(suffix = " frames")]
     pub statistics_history_size: usize,
 
-    #[schema(strings(display_name = "Minimum IDR interval"))]
+    #[schema(strings(
+        help = "Reduce minimum delay between IDR keyframes from 100ms to 5ms. Use on networks with high packet loss."
+    ))]
     #[schema(flag = "steamvr-restart")]
-    #[schema(gui(slider(min = 5, max = 1000, step = 5)), suffix = "ms")]
-    pub minimum_idr_interval_ms: u64,
+    pub aggressive_keyframe_resend: bool,
 
     pub dscp: Option<DscpTos>,
 }
@@ -1305,11 +1278,11 @@ pub fn session_settings_default() -> SettingsDefault {
                     Adaptive: BitrateModeAdaptiveDefault {
                         gui_collapsed: true,
                         saturation_multiplier: 0.95,
-                        max_throughput_mbps: SwitchDefault {
+                        max_bitrate_mbps: SwitchDefault {
                             enabled: false,
                             content: 100,
                         },
-                        min_throughput_mbps: SwitchDefault {
+                        min_bitrate_mbps: SwitchDefault {
                             enabled: false,
                             content: 5,
                         },
@@ -1360,13 +1333,9 @@ pub fn session_settings_default() -> SettingsDefault {
                     variant: EntropyCodingDefaultVariant::Cavlc,
                 },
                 use_10bit: false,
-                server_overrides_use_10bit: false,
                 use_full_range: true,
-                server_overrides_use_full_range: false,
                 encoding_gamma: 1.0,
-                server_overrides_encoding_gamma: false,
                 enable_hdr: false,
-                server_overrides_enable_hdr: false,
                 force_hdr_srgb_correction: false,
                 clamp_hdr_extended_range: false,
                 nvenc: NvencConfigDefault {
@@ -1475,7 +1444,7 @@ pub fn session_settings_default() -> SettingsDefault {
             },
             force_software_decoder: false,
             color_correction: SwitchDefault {
-                enabled: false,
+                enabled: true,
                 content: ColorCorrectionConfigDefault {
                     brightness: 0.,
                     contrast: 0.,
@@ -1720,7 +1689,7 @@ pub fn session_settings_default() -> SettingsDefault {
             client_recv_buffer_bytes: socket_buffer,
             max_queued_server_video_frames: 1024,
             avoid_video_glitching: false,
-            minimum_idr_interval_ms: 100,
+            aggressive_keyframe_resend: false,
             on_connect_script: "".into(),
             on_disconnect_script: "".into(),
             packet_size: 1400,

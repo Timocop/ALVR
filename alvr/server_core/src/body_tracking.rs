@@ -7,6 +7,8 @@ use alvr_session::BodyTrackingSinkConfig;
 use rosc::{OscMessage, OscPacket, OscType};
 use std::{collections::HashMap, net::UdpSocket};
 
+use crate::tracking::TrackingManager;
+
 static BODY_TRACKER_OSC_PATH_MAP: Lazy<HashMap<u64, &'static str>> = Lazy::new(|| {
     HashMap::from([
         (*HEAD_ID, "/tracking/trackers/head/"),
@@ -59,13 +61,17 @@ impl BodyTrackingSink {
         }
     }
 
-    pub fn send_tracking(&mut self, device_motions: &[(u64, DeviceMotion)]) {
+    pub fn send_tracking(
+        &mut self,
+        device_motions: &[(u64, DeviceMotion)],
+        tracking_manager: &TrackingManager,
+    ) {
         match self.config {
             BodyTrackingSinkConfig::VrchatBodyOsc { .. } => {
                 for (id, motion) in device_motions {
                     if BODY_TRACKER_OSC_PATH_MAP.contains_key(id) {
                         // Only do position because rotation isn't quite right
-                        let position = motion.pose.position;
+                        let pose = tracking_manager.recenter_pose(motion.pose);
                         self.send_osc_message(
                             format!(
                                 "{}{}",
@@ -74,9 +80,9 @@ impl BodyTrackingSink {
                             )
                             .as_str(),
                             vec![
-                                OscType::Float(position.x),
-                                OscType::Float(position.y),
-                                OscType::Float(-position.z),
+                                OscType::Float(pose.position.x),
+                                OscType::Float(pose.position.y),
+                                OscType::Float(-pose.position.z),
                             ],
                         );
                     }

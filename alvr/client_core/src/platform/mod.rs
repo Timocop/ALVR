@@ -12,14 +12,10 @@ pub enum Platform {
     Quest1,
     Quest2,
     Quest3,
-    Quest3S,
     QuestPro,
     QuestUnknown,
     PicoNeo3,
     Pico4,
-    Pico4Ultra,
-    PicoG3,
-    PicoUnknown,
     Focus3,
     XRElite,
     ViveUnknown,
@@ -33,45 +29,16 @@ pub enum Platform {
     Unknown,
 }
 
-impl Platform {
-    pub const fn is_quest(&self) -> bool {
-        matches!(
-            self,
-            Platform::Quest1
-                | Platform::Quest2
-                | Platform::Quest3
-                | Platform::Quest3S
-                | Platform::QuestPro
-                | Platform::QuestUnknown
-        )
-    }
-
-    pub const fn is_pico(&self) -> bool {
-        matches!(self, Platform::PicoNeo3 | Platform::Pico4)
-    }
-
-    pub const fn is_vive(&self) -> bool {
-        matches!(
-            self,
-            Platform::Focus3 | Platform::XRElite | Platform::ViveUnknown
-        )
-    }
-}
-
 impl Display for Platform {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let name = match self {
             Platform::Quest1 => "Quest 1",
             Platform::Quest2 => "Quest 2",
             Platform::Quest3 => "Quest 3",
-            Platform::Quest3S => "Quest 3S",
             Platform::QuestPro => "Quest Pro",
             Platform::QuestUnknown => "Quest (unknown)",
             Platform::PicoNeo3 => "Pico Neo 3",
             Platform::Pico4 => "Pico 4",
-            Platform::Pico4Ultra => "Pico 4 Ultra",
-            Platform::PicoG3 => "Pico G3",
-            Platform::PicoUnknown => "Pico (unknown)",
             Platform::Focus3 => "VIVE Focus 3",
             Platform::XRElite => "VIVE XR Elite",
             Platform::ViveUnknown => "HTC VIVE (unknown)",
@@ -99,14 +66,10 @@ pub fn platform() -> Platform {
             ("Oculus", _, "monterey") => Platform::Quest1,
             ("Oculus", _, "hollywood") => Platform::Quest2,
             ("Oculus", _, "eureka") => Platform::Quest3,
-            ("Oculus", _, "panther") => Platform::Quest3S,
             ("Oculus", _, "seacliff") => Platform::QuestPro,
             ("Oculus", _, _) => Platform::QuestUnknown,
             ("Pico", "Pico Neo 3" | "Pico Neo3 Link", _) => Platform::PicoNeo3,
-            ("Pico", _, "phoenix") => Platform::Pico4,
-            ("Pico", _, "sparrow") => Platform::Pico4Ultra,
-            ("Pico", _, "merline") => Platform::PicoG3,
-            ("Pico", _, _) => Platform::PicoUnknown,
+            ("Pico", _, _) => Platform::Pico4,
             ("HTC", "VIVE Focus 3", _) => Platform::Focus3,
             ("HTC", "VIVE XR Series", _) => Platform::XRElite,
             ("HTC", _, _) => Platform::ViveUnknown,
