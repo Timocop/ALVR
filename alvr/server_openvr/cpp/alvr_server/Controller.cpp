@@ -268,11 +268,11 @@ bool Controller::onPoseUpdate(uint64_t targetTimestampNs, float predictionS, Ffi
 
     if (controllerMotion != nullptr) {
         auto m = controllerMotion;
-
+        
         // Detect when the controller is idle.
-        bool controllerIdle = (m->linearVelocity[0] == m_lastControllerPose.vecVelocity[0]
-                            && m->linearVelocity[1] == m_lastControllerPose.vecVelocity[1]
-                            && m->linearVelocity[2] == m_lastControllerPose.vecVelocity[2]);
+        bool controllerIdle = (m->linearVelocity[0] <= 0.004
+                            && m->linearVelocity[1] <= 0.004
+                            && m->linearVelocity[2] <= 0.004);
 
         // Do not switch to hands instantly. Let hand tracking timeout and make sure controllers moved.
         if (handTimeout != -1)
