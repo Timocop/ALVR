@@ -1,11 +1,11 @@
 use crate::{
-    graphics::{self, CompositionLayerBuilder},
+    graphics::{self, ProjectionLayerAlphaConfig, ProjectionLayerBuilder},
     interaction::{self, InteractionContext},
     XrContext,
 };
 use alvr_client_core::{
-    decoder::{self, DecoderConfig, DecoderSource},
     graphics::{GraphicsContext, StreamRenderer},
+    video_decoder::{self, VideoDecoderConfig, VideoDecoderSource},
     ClientCoreContext, Platform,
 };
 use alvr_common::{
@@ -17,7 +17,7 @@ use alvr_common::{
 use alvr_packets::{FaceData, StreamConfig, ViewParams};
 use alvr_session::{
     BodyTrackingSourcesConfig, ClientsideFoveationConfig, ClientsideFoveationMode, CodecType,
-    FaceTrackingSourcesConfig, FoveatedEncodingConfig, MediacodecDataType,
+    FaceTrackingSourcesConfig, FoveatedEncodingConfig, MediacodecProperty, PassthroughMode,
 };
 use openxr as xr;
 use std::{
@@ -36,6 +36,7 @@ pub struct ParsedStreamConfig {
     pub refresh_rate_hint: f32,
     pub encoding_gamma: f32,
     pub enable_hdr: bool,
+    pub passthrough: Option<PassthroughMode>,
     pub foveated_encoding_config: Option<FoveatedEncodingConfig>,
     pub clientside_foveation_config: Option<ClientsideFoveationConfig>,
     pub face_sources_config: Option<FaceTrackingSourcesConfig>,
@@ -44,7 +45,7 @@ pub struct ParsedStreamConfig {
     pub force_software_decoder: bool,
     pub max_buffering_frames: f32,
     pub buffering_history_weight: f32,
-    pub decoder_options: Vec<(String, MediacodecDataType)>,
+    pub decoder_options: Vec<(String, MediacodecProperty)>,
 }
 
 impl ParsedStreamConfig {
@@ -54,6 +55,7 @@ impl ParsedStreamConfig {
             refresh_rate_hint: config.negotiated_config.refresh_rate_hint,
             encoding_gamma: config.negotiated_config.encoding_gamma,
             enable_hdr: config.negotiated_config.enable_hdr,
+            passthrough: config.settings.video.passthrough.as_option().cloned(),
             foveated_encoding_config: config
                 .negotiated_config
                 .enable_foveated_encoding
@@ -103,7 +105,7 @@ pub struct StreamContext {
     input_thread_running: Arc<RelaxedAtomic>,
     config: ParsedStreamConfig,
     renderer: StreamRenderer,
-    decoder: Option<(DecoderConfig, DecoderSource)>,
+    decoder: Option<(VideoDecoderConfig, VideoDecoderSource)>,
 }
 
 impl StreamContext {
@@ -196,6 +198,7 @@ impl StreamContext {
             platform != Platform::Lynx && !((platform.is_pico()) && config.enable_hdr),
             !config.enable_hdr,
             config.encoding_gamma,
+            config.passthrough.clone(),
         );
 
         core_ctx.send_playspace(
@@ -256,6 +259,10 @@ impl StreamContext {
         }
     }
 
+    pub fn uses_passthrough(&self) -> bool {
+        self.config.passthrough.is_some()
+    }
+
     pub fn update_reference_space(&mut self) {
         self.input_thread_running.set(false);
 
@@ -299,7 +306,7 @@ impl StreamContext {
     }
 
     pub fn maybe_initialize_decoder(&mut self, codec: CodecType, config_nal: Vec<u8>) {
-        let new_config = DecoderConfig {
+        let new_config = VideoDecoderConfig {
             codec,
             force_software_decoder: self.config.force_software_decoder,
             max_buffering_frames: self.config.max_buffering_frames,
@@ -315,7 +322,7 @@ impl StreamContext {
         };
 
         if let Some(config) = maybe_config {
-            let (mut sink, source) = decoder::create_decoder(config.clone(), {
+            let (mut sink, source) = video_decoder::create_decoder(config.clone(), {
                 let ctx = Arc::clone(&self.core_context);
                 move |maybe_timestamp: Result<Duration>| match maybe_timestamp {
                     Ok(timestamp) => ctx.report_frame_decoded(timestamp),
@@ -334,7 +341,7 @@ impl StreamContext {
         &mut self,
         frame_interval: Duration,
         vsync_time: Duration,
-    ) -> (CompositionLayerBuilder, Duration) {
+    ) -> (ProjectionLayerBuilder, Duration) {
         let frame_poll_deadline = Instant::now()
             + Duration::from_secs_f32(
                 frame_interval.as_secs_f32() * DECODER_MAX_TIMEOUT_MULTIPLIER,
@@ -397,7 +404,7 @@ impl StreamContext {
             },
         };
 
-        let layer = CompositionLayerBuilder::new(
+        let layer = ProjectionLayerBuilder::new(
             &self.reference_space,
             [
                 xr::CompositionLayerProjectionView::new()
@@ -419,6 +426,12 @@ impl StreamContext {
                             .image_rect(rect),
                     ),
             ],
+            self.config
+                .passthrough
+                .clone()
+                .map(|mode| ProjectionLayerAlphaConfig {
+                    premultiplied: !matches!(mode, PassthroughMode::Blend { .. }),
+                }),
         );
 
         (layer, timestamp)
@@ -442,7 +455,7 @@ fn stream_input_loop(
 ) {
     let mut last_controller_poses = [Pose::default(); 2];
     let mut last_palm_poses = [Pose::default(); 2];
-    let mut last_ipd = 0.0;
+    let mut last_view_params = [ViewParams::default(); 2];
 
     let mut deadline = Instant::now();
     let frame_interval = Duration::from_secs_f32(1.0 / refresh_rate);
@@ -462,19 +475,23 @@ fn stream_input_loop(
             return;
         };
 
-        let mut device_motions = Vec::with_capacity(3);
-
-        let Some((head_motion, local_views)) =
-            interaction::get_head_data(&xr_ctx.session, &reference_space, xr_now, &mut last_ipd)
-        else {
+        let Some((head_motion, local_views)) = interaction::get_head_data(
+            &xr_ctx.session,
+            &reference_space,
+            xr_now,
+            &last_view_params,
+        ) else {
             continue;
         };
 
-        device_motions.push((*HEAD_ID, head_motion));
-
         if let Some(views) = local_views {
             core_ctx.send_view_params(views);
+            last_view_params = views;
         }
+
+        let mut device_motions = Vec::with_capacity(3);
+
+        device_motions.push((*HEAD_ID, head_motion));
 
         let (left_hand_motion, left_hand_skeleton) = crate::interaction::get_hand_data(
             &xr_ctx.session,

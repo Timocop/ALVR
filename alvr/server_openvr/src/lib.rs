@@ -72,9 +72,9 @@ extern "C" fn driver_ready_idle(set_default_chap: bool) {
             };
 
             match event {
-                ServerCoreEvent::SetOpenvrProperty { device_id, prop } => unsafe {
-                    SetOpenvrProperty(device_id, props::to_ffi_openvr_prop(prop))
-                },
+                ServerCoreEvent::SetOpenvrProperty { device_id, prop } => {
+                    props::set_openvr_prop(device_id, prop)
+                }
                 ServerCoreEvent::ClientConnected => {
                     unsafe {
                         InitializeStreaming();
@@ -138,6 +138,7 @@ extern "C" fn driver_ready_idle(set_default_chap: bool) {
                             use_separate_hand_trackers,
                             ffi_left_hand_skeleton,
                             ffi_right_hand_skeleton,
+                            predict_hand_skeleton,
                         ) = if let Some(ControllersConfig {
                             hand_skeleton: Switch::Enabled(hand_skeleton_config),
                             ..
@@ -166,9 +167,10 @@ extern "C" fn driver_ready_idle(set_default_chap: bool) {
                                 hand_skeleton_config.steamvr_input_2_0,
                                 tracked.then_some(left_hand_skeleton).flatten(),
                                 tracked.then_some(right_hand_skeleton).flatten(),
+                                hand_skeleton_config.predict,
                             )
                         } else {
-                            (false, None, None)
+                            (false, None, None, false)
                         };
 
                         let ffi_left_hand_data = FfiHandData {
@@ -185,6 +187,7 @@ extern "C" fn driver_ready_idle(set_default_chap: bool) {
                             isHandTracker: use_separate_hand_trackers
                                 && ffi_left_controller_motion.is_none()
                                 && ffi_left_hand_skeleton.is_some(),
+                            predictHandSkeleton: predict_hand_skeleton,
                         };
                         let ffi_right_hand_data = FfiHandData {
                             controllerMotion: if let Some(motion) = &ffi_right_controller_motion {
@@ -200,16 +203,22 @@ extern "C" fn driver_ready_idle(set_default_chap: bool) {
                             isHandTracker: use_separate_hand_trackers
                                 && ffi_right_controller_motion.is_none()
                                 && ffi_right_hand_skeleton.is_some(),
+                            predictHandSkeleton: predict_hand_skeleton,
                         };
 
-                        let body_motions = tracking::BODY_TRACKER_ID_MAP
-                            .keys()
-                            .filter_map(|id| {
-                                Some((*id, context.get_device_motion(*id, sample_timestamp)?))
-                            })
-                            .collect::<Vec<_>>();
-                        let ffi_body_trackers =
-                            tracking::to_ffi_body_trackers(&body_motions, track_body);
+                        let ffi_body_tracker_motions = if track_body {
+                            tracking::BODY_TRACKER_IDS
+                                .iter()
+                                .filter_map(|id| {
+                                    Some(tracking::to_ffi_motion(
+                                        *id,
+                                        context.get_device_motion(*id, sample_timestamp)?,
+                                    ))
+                                })
+                                .collect::<Vec<_>>()
+                        } else {
+                            vec![]
+                        };
 
                         // There are two pairs of controllers/hand tracking devices registered in
                         // OpenVR, two lefts and two rights. If enabled with use_separate_hand_trackers,
@@ -222,16 +231,8 @@ extern "C" fn driver_ready_idle(set_default_chap: bool) {
                                 ffi_head_motion,
                                 ffi_left_hand_data,
                                 ffi_right_hand_data,
-                                if let Some(body_trackers) = &ffi_body_trackers {
-                                    body_trackers.as_ptr()
-                                } else {
-                                    ptr::null()
-                                },
-                                if let Some(body_trackers) = &ffi_body_trackers {
-                                    body_trackers.len() as _
-                                } else {
-                                    0
-                                },
+                                ffi_body_tracker_motions.as_ptr(),
+                                ffi_body_tracker_motions.len() as i32,
                             )
                         };
                     }
@@ -381,21 +382,13 @@ extern "C" fn report_present(timestamp_ns: u64, offset_ns: u64) {
 
 extern "C" fn wait_for_vsync() {
     // NB: don't sleep while locking SERVER_DATA_MANAGER or SERVER_CORE_CONTEXT
-    let sleep_duration = if alvr_server_core::settings()
-        .video
-        .optimize_game_render_latency
-    {
-        SERVER_CORE_CONTEXT
-            .read()
-            .as_ref()
-            .and_then(|ctx| ctx.duration_until_next_vsync())
-    } else {
-        None
-    };
+    let sleep_duration = SERVER_CORE_CONTEXT
+        .read()
+        .as_ref()
+        .and_then(|ctx| ctx.duration_until_next_vsync())
+        .unwrap_or(Duration::from_millis(50));
 
-    if let Some(duration) = sleep_duration {
-        thread::sleep(duration);
-    }
+    thread::sleep(sleep_duration);
 }
 
 pub extern "C" fn shutdown_driver() {

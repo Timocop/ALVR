@@ -11,6 +11,22 @@ use settings_schema::{
 
 include!(concat!(env!("OUT_DIR"), "/openvr_property_keys.rs"));
 
+pub enum OpenvrPropType {
+    Bool,
+    Float,
+    Int32,
+    Uint64,
+    Vector3,
+    Double,
+    String,
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, Debug)]
+pub struct OpenvrProperty {
+    pub key: OpenvrPropKey,
+    pub value: String,
+}
+
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 #[schema(gui = "button_group")]
 pub enum FrameSize {
@@ -305,11 +321,18 @@ CABAC produces better compression but it's significantly slower and may lead to 
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub enum MediacodecDataType {
-    Float(f32),
-    Int32(i32),
-    Int64(i64),
-    String(String),
+pub enum MediacodecPropType {
+    Float,
+    Int32,
+    Int64,
+    String,
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct MediacodecProperty {
+    #[schema(strings(display_name = "Type"))]
+    pub ty: MediacodecPropType,
+    pub value: String,
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
@@ -532,8 +555,25 @@ pub enum H264Profile {
     Baseline = 2,
 }
 
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
+#[schema(gui = "button_group")]
+pub enum PassthroughMode {
+    AugmentedReality {
+        #[schema(gui(slider(min = 0.0, max = 1.0, step = 0.01)))]
+        brightness: f32,
+    },
+    Blend {
+        #[schema(gui(slider(min = 0.0, max = 1.0, step = 0.01)))]
+        opacity: f32,
+    },
+}
+
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 pub struct VideoConfig {
+    #[schema(strings(help = r"Augmented reality: corresponds to premultiplied alpha
+Blend: corresponds to un-premultiplied alpha"))]
+    pub passthrough: Switch<PassthroughMode>,
+
     pub bitrate: BitrateConfig,
 
     #[schema(strings(
@@ -561,10 +601,6 @@ pub struct VideoConfig {
     #[schema(gui(slider(min = 0.50, max = 0.99, step = 0.01)))]
     pub buffering_history_weight: f32,
 
-    #[schema(strings(help = "This works only on Windows"))]
-    #[schema(flag = "real-time")]
-    pub optimize_game_render_latency: bool,
-
     #[schema(flag = "steamvr-restart")]
     pub encoder_config: EncoderConfig,
 
@@ -573,7 +609,7 @@ pub struct VideoConfig {
     ))]
     pub force_software_decoder: bool,
 
-    pub mediacodec_extra_options: Vec<(String, MediacodecDataType)>,
+    pub mediacodec_extra_options: Vec<(String, MediacodecProperty)>,
 
     #[schema(strings(
         help = "Resolution used for encoding and decoding. Relative to a single eye view."
@@ -678,6 +714,8 @@ pub enum HeadsetEmulationMode {
     RiftS,
     #[schema(strings(display_name = "Quest 2"))]
     Quest2,
+    #[schema(strings(display_name = "Quest Pro"))]
+    QuestPro,
     Vive,
     Custom {
         serial_number: String,
@@ -740,6 +778,18 @@ pub struct BodyTrackingConfig {
     pub tracked: bool,
 }
 
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
+#[schema(collapsible)]
+pub struct VMCConfig {
+    pub host: String,
+    pub port: u16,
+    #[schema(strings(help = "Turn this off to temporarily pause sending data."))]
+    #[schema(flag = "real-time")]
+    pub publish: bool,
+    #[schema(flag = "real-time")]
+    pub orientation_correction: bool,
+}
+
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub enum ControllersEmulationMode {
     #[schema(strings(display_name = "Rift S Touch"))]
@@ -748,9 +798,13 @@ pub enum ControllersEmulationMode {
     Quest2Touch,
     #[schema(strings(display_name = "Quest 3 Touch Plus"))]
     Quest3Plus,
+    #[schema(strings(display_name = "Quest Pro"))]
+    QuestPro,
     #[schema(strings(display_name = "Valve Index"))]
     ValveIndex,
+    #[schema(strings(display_name = "Vive Wand"))]
     ViveWand,
+    #[schema(strings(display_name = "Vive Tracker"))]
     ViveTracker,
     Custom {
         serial_number: String,
@@ -904,6 +958,12 @@ pub struct HandSkeletonConfig {
         help = r"Enabling this will use separate tracker objects with the full skeletal tracking level when hand tracking is detected. This is required for VRChat hand tracking."
     ))]
     pub steamvr_input_2_0: bool,
+
+    #[schema(flag = "real-time")]
+    #[schema(strings(
+        help = r"Predict hand skeleton to make it less floaty. It may make hands too jittery."
+    ))]
+    pub predict: bool,
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
@@ -1037,6 +1097,10 @@ Tilted: the world gets tilted when long pressing the oculus button. This is usef
 
     #[schema(flag = "steamvr-restart")]
     pub body_tracking: Switch<BodyTrackingConfig>,
+
+    #[schema(flag = "steamvr-restart")]
+    #[schema(strings(display_name = "VMC"))]
+    pub vmc: Switch<VMCConfig>,
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, Copy)]
@@ -1064,6 +1128,13 @@ pub enum SocketBufferSize {
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
+pub enum ClientFlavor {
+    Store,
+    Github,
+    Custom(String),
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 pub struct ConnectionConfig {
     #[schema(strings(
         help = r#"UDP: Faster, but less stable than TCP. Try this if your network is well optimized and free of interference.
@@ -1072,6 +1143,16 @@ TCP: Slower than UDP, but more stable. Pick this if you experience video or audi
     pub stream_protocol: SocketProtocol,
 
     pub client_discovery: Switch<DiscoveryConfig>,
+
+    #[schema(strings(
+        help = r#"Which release type of client should ALVR look for when establishing a wired connection."#
+    ))]
+    pub wired_client_type: ClientFlavor,
+
+    #[schema(strings(
+        help = r#"Wether ALVR should try to automatically launch the client when establishing a wired connection."#
+    ))]
+    pub wired_client_autolaunch: bool,
 
     #[schema(strings(
         help = "This script will be ran when the headset connects. Env var ACTION will be set to `connect`."
@@ -1281,7 +1362,12 @@ pub fn session_settings_default() -> SettingsDefault {
     };
     let default_custom_openvr_props = VectorDefault {
         gui_collapsed: true,
-        element: OPENVR_PROPS_DEFAULT.clone(),
+        element: OpenvrPropertyDefault {
+            key: OpenvrPropKeyDefault {
+                variant: OpenvrPropKeyDefaultVariant::TrackingSystemNameString,
+            },
+            value: "".into(),
+        },
         content: vec![],
     };
     let socket_buffer = SocketBufferSizeDefault {
@@ -1291,13 +1377,20 @@ pub fn session_settings_default() -> SettingsDefault {
 
     SettingsDefault {
         video: VideoConfigDefault {
+            passthrough: SwitchDefault {
+                enabled: false,
+                content: PassthroughModeDefault {
+                    variant: PassthroughModeDefaultVariant::AugmentedReality,
+                    AugmentedReality: PassthroughModeAugmentedRealityDefault { brightness: 0.4 },
+                    Blend: PassthroughModeBlendDefault { opacity: 0.5 },
+                },
+            },
             adapter_index: 0,
             transcoding_view_resolution: view_resolution.clone(),
             emulated_headset_view_resolution: view_resolution,
             preferred_fps: 72.,
             max_buffering_frames: 2.0,
             buffering_history_weight: 0.90,
-            optimize_game_render_latency: true,
             bitrate: BitrateConfigDefault {
                 gui_collapsed: false,
                 mode: BitrateModeDefault {
@@ -1416,13 +1509,12 @@ pub fn session_settings_default() -> SettingsDefault {
                 },
             },
             mediacodec_extra_options: {
-                fn int32_default(int32: i32) -> MediacodecDataTypeDefault {
-                    MediacodecDataTypeDefault {
-                        variant: MediacodecDataTypeDefaultVariant::Int32,
-                        Float: 0.0,
-                        Int32: int32,
-                        Int64: 0,
-                        String: "".into(),
+                fn int32_default(int32: i32) -> MediacodecPropertyDefault {
+                    MediacodecPropertyDefault {
+                        ty: MediacodecPropTypeDefault {
+                            variant: MediacodecPropTypeDefaultVariant::Int32,
+                        },
+                        value: int32.to_string(),
                     }
                 }
                 DictionaryDefault {
@@ -1565,6 +1657,16 @@ pub fn session_settings_default() -> SettingsDefault {
                     tracked: true,
                 },
             },
+            vmc: SwitchDefault {
+                enabled: false,
+                content: VMCConfigDefault {
+                    gui_collapsed: true,
+                    host: "127.0.0.1".into(),
+                    port: 39539,
+                    publish: true,
+                    orientation_correction: true,
+                },
+            },
             controllers: SwitchDefault {
                 enabled: true,
                 content: ControllersConfigDefault {
@@ -1574,6 +1676,7 @@ pub fn session_settings_default() -> SettingsDefault {
                         enabled: true,
                         content: HandSkeletonConfigDefault {
                             steamvr_input_2_0: true,
+                            predict: false,
                         },
                     },
                     multimodal_tracking: false,
@@ -1698,6 +1801,15 @@ pub fn session_settings_default() -> SettingsDefault {
                     auto_trust_clients: cfg!(debug_assertions),
                 },
             },
+            wired_client_type: ClientFlavorDefault {
+                Custom: "alvr.client".to_owned(),
+                variant: if alvr_common::is_stable() {
+                    ClientFlavorDefaultVariant::Store
+                } else {
+                    ClientFlavorDefaultVariant::Github
+                },
+            },
+            wired_client_autolaunch: true,
             web_server_port: 8082,
             stream_port: 9944,
             osc_local_port: 9942,

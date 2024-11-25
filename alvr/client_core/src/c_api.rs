@@ -1,7 +1,8 @@
 use crate::{
-    decoder::{self, DecoderConfig, DecoderSource},
     graphics::{GraphicsContext, LobbyRenderer, RenderViewInput, StreamRenderer},
-    storage, ClientCapabilities, ClientCoreContext, ClientCoreEvent,
+    storage,
+    video_decoder::{self, VideoDecoderConfig, VideoDecoderSource},
+    ClientCapabilities, ClientCoreContext, ClientCoreEvent,
 };
 use alvr_common::{
     anyhow::Result,
@@ -13,7 +14,7 @@ use alvr_common::{
     warn, DeviceMotion, Fov, OptLazy, Pose,
 };
 use alvr_packets::{ButtonEntry, ButtonValue, FaceData, ViewParams};
-use alvr_session::{CodecType, FoveatedEncodingConfig, MediacodecDataType};
+use alvr_session::{CodecType, FoveatedEncodingConfig, MediacodecPropType, MediacodecProperty};
 use std::{
     cell::RefCell,
     ffi::{c_char, c_void, CStr, CString},
@@ -255,7 +256,7 @@ pub extern "C" fn alvr_protocol_id(protocol_buffer: *mut c_char) -> u64 {
 #[cfg(target_os = "android")]
 #[no_mangle]
 pub unsafe extern "C" fn alvr_try_get_permission(permission: *const c_char) {
-    crate::platform::try_get_permission(CStr::from_ptr(permission).to_str().unwrap());
+    alvr_system_info::try_get_permission(CStr::from_ptr(permission).to_str().unwrap());
 }
 
 /// NB: for android, `context` must be thread safe.
@@ -780,12 +781,16 @@ pub unsafe extern "C" fn alvr_start_stream_opengl(config: AlvrStreamConfig) {
         true,
         false, // TODO: limited range fix config
         1.0,   // TODO: encoding gamma config
+        None,  // TODO: passthrough config
     )));
 }
 
 // todo: support hands
 #[no_mangle]
-pub unsafe extern "C" fn alvr_render_lobby_opengl(view_inputs: *const AlvrViewInput) {
+pub unsafe extern "C" fn alvr_render_lobby_opengl(
+    view_inputs: *const AlvrViewInput,
+    render_background: bool,
+) {
     let view_inputs = [
         RenderViewInput {
             pose: from_capi_pose((*view_inputs).pose),
@@ -801,7 +806,12 @@ pub unsafe extern "C" fn alvr_render_lobby_opengl(view_inputs: *const AlvrViewIn
 
     LOBBY_RENDERER.with_borrow(|renderer| {
         if let Some(renderer) = renderer {
-            renderer.render(view_inputs, [(None, None), (None, None)], None);
+            renderer.render(
+                view_inputs,
+                [(None, None), (None, None)],
+                None,
+                render_background,
+            );
         }
     });
 }
@@ -823,7 +833,7 @@ pub unsafe extern "C" fn alvr_render_stream_opengl(
 
 // Decoder-related interface
 
-static DECODER_SOURCE: OptLazy<DecoderSource> = alvr_common::lazy_mut_none();
+static DECODER_SOURCE: OptLazy<VideoDecoderSource> = alvr_common::lazy_mut_none();
 
 #[repr(u8)]
 pub enum AlvrMediacodecPropType {
@@ -863,7 +873,7 @@ pub struct AlvrDecoderConfig {
 /// alvr_initialize() must be called before alvr_create_decoder
 #[no_mangle]
 pub extern "C" fn alvr_create_decoder(config: AlvrDecoderConfig) {
-    let config = DecoderConfig {
+    let config = VideoDecoderConfig {
         codec: match config.codec {
             AlvrCodec::H264 => CodecType::H264,
             AlvrCodec::Hevc => CodecType::Hevc,
@@ -879,25 +889,29 @@ pub extern "C" fn alvr_create_decoder(config: AlvrDecoderConfig) {
                 .iter()
                 .map(|option| unsafe {
                     let key = CStr::from_ptr(option.key).to_str().unwrap();
-                    let value = match option.ty {
-                        AlvrMediacodecPropType::Float => {
-                            MediacodecDataType::Float(option.value.float_)
-                        }
-                        AlvrMediacodecPropType::Int32 => {
-                            MediacodecDataType::Int32(option.value.int32)
-                        }
-                        AlvrMediacodecPropType::Int64 => {
-                            MediacodecDataType::Int64(option.value.int64)
-                        }
-                        AlvrMediacodecPropType::String => MediacodecDataType::String(
-                            CStr::from_ptr(option.value.string)
+                    let prop = match option.ty {
+                        AlvrMediacodecPropType::Float => MediacodecProperty {
+                            ty: MediacodecPropType::Float,
+                            value: option.value.float_.to_string(),
+                        },
+                        AlvrMediacodecPropType::Int32 => MediacodecProperty {
+                            ty: MediacodecPropType::Int32,
+                            value: option.value.int32.to_string(),
+                        },
+                        AlvrMediacodecPropType::Int64 => MediacodecProperty {
+                            ty: MediacodecPropType::Int64,
+                            value: option.value.int64.to_string(),
+                        },
+                        AlvrMediacodecPropType::String => MediacodecProperty {
+                            ty: MediacodecPropType::String,
+                            value: CStr::from_ptr(option.value.string)
                                 .to_str()
                                 .unwrap()
                                 .to_owned(),
-                        ),
+                        },
                     };
 
-                    (key.to_string(), value)
+                    (key.to_owned(), prop)
                 })
                 .collect()
         } else {
@@ -909,7 +923,7 @@ pub extern "C" fn alvr_create_decoder(config: AlvrDecoderConfig) {
     };
 
     let (mut sink, source) =
-        decoder::create_decoder(config, |maybe_timestamp: Result<Duration>| {
+        video_decoder::create_decoder(config, |maybe_timestamp: Result<Duration>| {
             if let Some(context) = &*CLIENT_CORE_CONTEXT.lock() {
                 match maybe_timestamp {
                     Ok(timestamp) => context.report_frame_decoded(timestamp),
