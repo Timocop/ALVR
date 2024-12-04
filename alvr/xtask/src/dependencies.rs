@@ -1,4 +1,4 @@
-use crate::command;
+use crate::{command, BuildPlatform};
 use alvr_filesystem as afs;
 use std::{fs, path::Path};
 use xshell::{cmd, Shell};
@@ -110,7 +110,7 @@ pub fn prepare_windows_deps(skip_admin_priv: bool) {
     prepare_ffmpeg_windows(&deps_path);
 }
 
-pub fn prepare_linux_deps(nvenc_flag: bool) {
+pub fn prepare_linux_deps(enable_nvenc: bool) {
     let sh = Shell::new().unwrap();
 
     update_submodules(&sh);
@@ -120,7 +120,7 @@ pub fn prepare_linux_deps(nvenc_flag: bool) {
     sh.create_dir(&deps_path).unwrap();
 
     build_x264_linux(&deps_path);
-    build_ffmpeg_linux(nvenc_flag, &deps_path);
+    build_ffmpeg_linux(enable_nvenc, &deps_path);
 }
 
 pub fn build_x264_linux(deps_path: &Path) {
@@ -156,7 +156,7 @@ pub fn build_x264_linux(deps_path: &Path) {
     cmd!(sh, "make install").run().unwrap();
 }
 
-pub fn build_ffmpeg_linux(nvenc_flag: bool, deps_path: &Path) {
+pub fn build_ffmpeg_linux(enable_nvenc: bool, deps_path: &Path) {
     let sh = Shell::new().unwrap();
 
     command::download_and_extract_zip(
@@ -208,7 +208,7 @@ pub fn build_ffmpeg_linux(nvenc_flag: bool, deps_path: &Path) {
     let ffmpeg_command = "for p in ../../../alvr/xtask/patches/*; do patch -p1 < $p; done";
     cmd!(sh, "bash -c {ffmpeg_command}").run().unwrap();
 
-    if nvenc_flag {
+    if enable_nvenc {
         /*
            Describing Nvidia specific options --nvccflags:
            nvcc from CUDA toolkit version 11.0 or higher does not support compiling for 'compute_30' (default in ffmpeg)
@@ -297,6 +297,30 @@ pub fn prepare_macos_deps() {
     let sh = Shell::new().unwrap();
 
     update_submodules(&sh);
+}
+
+pub fn prepare_server_deps(
+    platform: Option<BuildPlatform>,
+    skip_admin_priv: bool,
+    enable_nvenc: bool,
+) {
+    match platform {
+        Some(BuildPlatform::Windows) => prepare_windows_deps(skip_admin_priv),
+        Some(BuildPlatform::Linux) => prepare_linux_deps(enable_nvenc),
+        Some(BuildPlatform::Macos) => prepare_macos_deps(),
+        Some(BuildPlatform::Android) => panic!("Android is not supported"),
+        None => {
+            if cfg!(windows) {
+                prepare_windows_deps(skip_admin_priv);
+            } else if cfg!(target_os = "linux") {
+                prepare_linux_deps(enable_nvenc);
+            } else if cfg!(target_os = "macos") {
+                prepare_macos_deps();
+            } else {
+                panic!("Unsupported platform");
+            }
+        }
+    }
 }
 
 fn get_android_openxr_loaders(selection: OpenXRLoadersSelection) {

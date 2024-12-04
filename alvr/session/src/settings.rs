@@ -2,6 +2,7 @@ use alvr_common::{
     DebugGroupsConfig, DebugGroupsConfigDefault, LogSeverity, LogSeverityDefault,
     LogSeverityDefaultVariant,
 };
+use alvr_system_info::{ClientFlavor, ClientFlavorDefault, ClientFlavorDefaultVariant};
 use bytemuck::{Pod, Zeroable};
 use serde::{Deserialize, Serialize};
 use settings_schema::{
@@ -724,7 +725,6 @@ pub enum HeadsetEmulationMode {
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
 pub struct FaceTrackingSourcesConfig {
-    pub combined_eye_gaze: bool,
     pub eye_tracking_fb: bool,
     pub face_tracking_fb: bool,
     pub eye_expressions_htc: bool,
@@ -1125,13 +1125,6 @@ pub enum SocketBufferSize {
     Default,
     Maximum,
     Custom(#[schema(suffix = "B")] u32),
-}
-
-#[derive(SettingsSchema, Serialize, Deserialize, Clone)]
-pub enum ClientFlavor {
-    Store,
-    Github,
-    Custom(String),
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
@@ -1628,7 +1621,6 @@ pub fn session_settings_default() -> SettingsDefault {
                 content: FaceTrackingConfigDefault {
                     gui_collapsed: true,
                     sources: FaceTrackingSourcesConfigDefault {
-                        combined_eye_gaze: true,
                         eye_tracking_fb: true,
                         face_tracking_fb: true,
                         eye_expressions_htc: true,
