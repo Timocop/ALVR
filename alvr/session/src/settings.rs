@@ -602,6 +602,12 @@ Blend: corresponds to un-premultiplied alpha"))]
     #[schema(gui(slider(min = 0.50, max = 0.99, step = 0.01)))]
     pub buffering_history_weight: f32,
 
+    #[schema(strings(
+        help = r"This works only on Windows. It shouldn't be disabled except in certain circumstances when you know the VR game will not meet the target framerate."
+    ))]
+    #[schema(flag = "real-time")]
+    pub enforce_server_frame_pacing: bool,
+
     #[schema(flag = "steamvr-restart")]
     pub encoder_config: EncoderConfig,
 
@@ -681,6 +687,8 @@ pub enum MicrophoneDevicesConfig {
     VoiceMeeterAux,
     #[schema(strings(display_name = "VoiceMeeter VAIO3"))]
     VoiceMeeterVaio3,
+    #[schema(strings(display_name = "Virtual Audio Cable"))]
+    VAC,
     Custom {
         #[schema(strings(help = "This device is used by ALVR to output microphone audio"))]
         sink: CustomAudioDeviceConfig,
@@ -1101,6 +1109,12 @@ Tilted: the world gets tilted when long pressing the oculus button. This is usef
     #[schema(flag = "steamvr-restart")]
     #[schema(strings(display_name = "VMC"))]
     pub vmc: Switch<VMCConfig>,
+
+    #[schema(strings(
+        help = "Maximum prediction for head and controllers. Used to avoid too much jitter during loading."
+    ))]
+    #[schema(gui(slider(min = 0, max = 200, step = 5)), suffix = "ms")]
+    pub max_prediction_ms: u64,
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, Copy)]
@@ -1114,6 +1128,7 @@ pub enum SocketProtocol {
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 pub struct DiscoveryConfig {
+    #[cfg_attr(target_os = "linux", schema(flag = "hidden"))]
     #[schema(strings(
         help = "Allow untrusted clients to connect without confirmation. This is not recommended for security reasons."
     ))]
@@ -1147,16 +1162,40 @@ TCP: Slower than UDP, but more stable. Pick this if you experience video or audi
     ))]
     pub wired_client_autolaunch: bool,
 
-    #[schema(strings(
-        help = "This script will be ran when the headset connects. Env var ACTION will be set to `connect`."
-    ))]
-    pub on_connect_script: String,
+    #[cfg_attr(
+        windows,
+        schema(strings(
+            help = "If on_connect.bat exists alongside session.json, it will be run on headset connect. Env var ACTION will be set to `connect`."
+        ))
+    )]
+    #[cfg_attr(
+        not(windows),
+        schema(strings(
+            help = "If on_connect.sh exists alongside session.json, it will be run on headset connect. Env var ACTION will be set to `connect`."
+        ))
+    )]
+    pub enable_on_connect_script: bool,
+
+    #[cfg_attr(
+        windows,
+        schema(strings(
+            help = "If on_disconnect.bat exists alongside session.json, it will be run on headset disconnect. Env var ACTION will be set to `disconnect`."
+        ))
+    )]
+    #[cfg_attr(
+        not(windows),
+        schema(strings(
+            help = "If on_disconnect.sh exists alongside session.json, it will be run on headset disconnect. Env var ACTION will be set to `disconnect`."
+        ))
+    )]
+    #[schema(flag = "real-time")]
+    pub enable_on_disconnect_script: bool,
 
     #[schema(strings(
-        help = "This script will be ran when the headset disconnects, or when SteamVR shuts down. Env var ACTION will be set to `disconnect`."
+        help = "Allow cross-origin browser requests to control ALVR settings remotely."
     ))]
     #[schema(flag = "real-time")]
-    pub on_disconnect_script: String,
+    pub allow_untrusted_http: bool,
 
     #[schema(strings(
         help = r#"If the client, server or the network discarded one packet, discard packets until a IDR packet is found.
@@ -1391,6 +1430,7 @@ pub fn session_settings_default() -> SettingsDefault {
             preferred_fps: 72.,
             max_buffering_frames: 2.0,
             buffering_history_weight: 0.90,
+            enforce_server_frame_pacing: true,
             bitrate: BitrateConfigDefault {
                 gui_collapsed: false,
                 mode: BitrateModeDefault {
@@ -1752,7 +1792,7 @@ pub fn session_settings_default() -> SettingsDefault {
                             deactivation_delay: 100,
                         },
                     },
-                    steamvr_pipeline_frames: 3.0,
+                    steamvr_pipeline_frames: 2.1,
                     linear_velocity_cutoff: 0.05,
                     angular_velocity_cutoff: 10.0,
                     left_controller_position_offset: ArrayDefault {
@@ -1789,6 +1829,7 @@ pub fn session_settings_default() -> SettingsDefault {
             rotation_recentering_mode: RotationRecenteringModeDefault {
                 variant: RotationRecenteringModeDefaultVariant::Yaw,
             },
+            max_prediction_ms: 100,
         },
         connection: ConnectionConfigDefault {
             stream_protocol: SocketProtocolDefault {
@@ -1832,8 +1873,9 @@ pub fn session_settings_default() -> SettingsDefault {
             max_queued_server_video_frames: 1024,
             avoid_video_glitching: false,
             minimum_idr_interval_ms: 100,
-            on_connect_script: "".into(),
-            on_disconnect_script: "".into(),
+            enable_on_connect_script: false,
+            enable_on_disconnect_script: false,
+            allow_untrusted_http: false,
             packet_size: 1400,
             statistics_history_size: 256,
         },

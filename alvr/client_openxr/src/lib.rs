@@ -7,9 +7,7 @@ mod passthrough;
 mod stream;
 
 use crate::stream::ParsedStreamConfig;
-use alvr_client_core::{
-    graphics::GraphicsContext, ClientCapabilities, ClientCoreContext, ClientCoreEvent, Platform,
-};
+use alvr_client_core::{ClientCapabilities, ClientCoreContext, ClientCoreEvent};
 use alvr_common::{
     error,
     glam::{Quat, UVec2, Vec3},
@@ -17,6 +15,8 @@ use alvr_common::{
     parking_lot::RwLock,
     Fov, Pose, HAND_LEFT_ID,
 };
+use alvr_graphics::GraphicsContext;
+use alvr_system_info::Platform;
 use extra_extensions::{
     META_BODY_TRACKING_FULL_BODY_EXTENSION_NAME, META_DETACHED_CONTROLLERS_EXTENSION_NAME,
     META_SIMULTANEOUS_HANDS_AND_CONTROLLERS_EXTENSION_NAME,
@@ -83,6 +83,10 @@ fn to_xr_fov(f: Fov) -> xr::Fovf {
         angle_up: f.up,
         angle_down: f.down,
     }
+}
+
+fn from_xr_time(timestamp: xr::Time) -> Duration {
+    Duration::from_nanos(timestamp.as_nanos() as _)
 }
 
 fn to_xr_time(timestamp: Duration) -> xr::Time {
@@ -263,15 +267,16 @@ pub fn entry_point() {
 
         let interaction_context = Arc::new(RwLock::new(InteractionContext::new(
             xr_session.clone(),
+            &exts.other,
+            xr_system,
             platform,
-            exts.other
-                .contains(&META_SIMULTANEOUS_HANDS_AND_CONTROLLERS_EXTENSION_NAME.to_owned()),
         )));
 
         let mut lobby = Lobby::new(
             xr_session.clone(),
             Rc::clone(&graphics_context),
             Arc::clone(&interaction_context),
+            platform,
             default_view_resolution,
             &last_lobby_message,
         );
@@ -451,7 +456,7 @@ pub fn entry_point() {
             let (layer, display_time) = if let Some(stream) = &mut stream_context {
                 stream.render(frame_interval, vsync_time)
             } else {
-                (lobby.render(frame_state.predicted_display_time), vsync_time)
+                (lobby.render(vsync_time), vsync_time)
             };
 
             let layers: &[&xr::CompositionLayerBase<_>] =

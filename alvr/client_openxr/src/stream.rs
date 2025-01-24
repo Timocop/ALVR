@@ -3,9 +3,8 @@ use crate::{
     interaction::{self, InteractionContext, InteractionSourcesConfig},
 };
 use alvr_client_core::{
-    graphics::{GraphicsContext, StreamRenderer, StreamViewParams},
     video_decoder::{self, VideoDecoderConfig, VideoDecoderSource},
-    ClientCoreContext, Platform,
+    ClientCoreContext,
 };
 use alvr_common::{
     anyhow::Result,
@@ -14,11 +13,13 @@ use alvr_common::{
     parking_lot::RwLock,
     Pose, RelaxedAtomic, HAND_LEFT_ID, HAND_RIGHT_ID, HEAD_ID,
 };
+use alvr_graphics::{GraphicsContext, StreamRenderer, StreamViewParams};
 use alvr_packets::{FaceData, StreamConfig, ViewParams};
 use alvr_session::{
     ClientsideFoveationConfig, ClientsideFoveationMode, CodecType, FoveatedEncodingConfig,
     MediacodecProperty, PassthroughMode,
 };
+use alvr_system_info::Platform;
 use openxr as xr;
 use std::{
     ptr,
@@ -33,6 +34,7 @@ const DECODER_MAX_TIMEOUT_MULTIPLIER: f32 = 0.8;
 pub struct ParsedStreamConfig {
     pub view_resolution: UVec2,
     pub refresh_rate_hint: f32,
+    pub use_full_range: bool,
     pub encoding_gamma: f32,
     pub enable_hdr: bool,
     pub passthrough: Option<PassthroughMode>,
@@ -50,6 +52,7 @@ impl ParsedStreamConfig {
         Self {
             view_resolution: config.negotiated_config.view_resolution,
             refresh_rate_hint: config.negotiated_config.refresh_rate_hint,
+            use_full_range: config.negotiated_config.use_full_range,
             encoding_gamma: config.negotiated_config.encoding_gamma,
             enable_hdr: config.negotiated_config.enable_hdr,
             passthrough: config.settings.video.passthrough.as_option().cloned(),
@@ -180,7 +183,7 @@ impl StreamContext {
             format,
             config.foveated_encoding_config.clone(),
             platform != Platform::Lynx && !((platform.is_pico()) && config.enable_hdr),
-            !config.enable_hdr,
+            config.use_full_range && !config.enable_hdr, // TODO: figure out why HDR doesn't need the limited range hackfix in staging?
             config.encoding_gamma,
             config.passthrough.clone(),
         );
@@ -455,17 +458,21 @@ fn stream_input_loop(
             return;
         }
 
-        let Some(xr_now) = crate::xr_runtime_now(xr_session.instance()) else {
+        let Some(now) = crate::xr_runtime_now(xr_session.instance()).map(crate::from_xr_time)
+        else {
             error!("Cannot poll tracking: invalid time");
             return;
         };
+
+        let target_time = now + core_ctx.get_total_prediction_offset();
 
         let Some((head_motion, local_views)) = interaction::get_head_data(
             &xr_session,
             platform,
             stage_reference_space,
             view_reference_space,
-            xr_now,
+            now,
+            target_time,
             &last_view_params,
         ) else {
             continue;
@@ -482,16 +489,20 @@ fn stream_input_loop(
 
         let (left_hand_motion, left_hand_skeleton) = crate::interaction::get_hand_data(
             &xr_session,
+            platform,
             stage_reference_space,
-            xr_now,
+            now,
+            target_time,
             &int_ctx.hands_interaction[0],
             &mut last_controller_poses[0],
             &mut last_palm_poses[0],
         );
         let (right_hand_motion, right_hand_skeleton) = crate::interaction::get_hand_data(
             &xr_session,
+            platform,
             stage_reference_space,
-            xr_now,
+            now,
+            target_time,
             &int_ctx.hands_interaction[1],
             &mut last_controller_poses[1],
             &mut last_palm_poses[1],
@@ -515,9 +526,9 @@ fn stream_input_loop(
                 &xr_session,
                 &int_ctx.face_sources,
                 stage_reference_space,
-                xr_now,
+                now,
             ),
-            fb_face_expression: interaction::get_fb_face_expression(&int_ctx.face_sources, xr_now),
+            fb_face_expression: interaction::get_fb_face_expression(&int_ctx.face_sources, now),
             htc_eye_expression: interaction::get_htc_eye_expression(&int_ctx.face_sources),
             htc_lip_expression: interaction::get_htc_lip_expression(&int_ctx.face_sources),
         };
@@ -525,14 +536,14 @@ fn stream_input_loop(
         if let Some((tracker, joint_count)) = &int_ctx.body_sources.body_tracker_fb {
             device_motions.append(&mut interaction::get_fb_body_tracking_points(
                 stage_reference_space,
-                xr_now,
+                now,
                 tracker,
                 *joint_count,
             ));
         }
 
         core_ctx.send_tracking(
-            Duration::from_nanos(xr_now.as_nanos() as u64),
+            Duration::from_nanos(now.as_nanos() as u64),
             device_motions,
             [left_hand_skeleton, right_hand_skeleton],
             face_data,

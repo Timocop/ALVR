@@ -21,6 +21,7 @@ use wgpu::{
 pub const SDR_FORMAT: TextureFormat = TextureFormat::Rgba8Unorm;
 pub const SDR_FORMAT_GL: u32 = gl::RGBA8;
 pub const GL_TEXTURE_EXTERNAL_OES: u32 = 0x8D65;
+pub const MAX_PUSH_CONSTANTS_SIZE: u32 = 72;
 
 type CreateImageFn = unsafe extern "C" fn(
     egl::EGLDisplay,
@@ -46,7 +47,7 @@ macro_rules! ck {
         let res = $gl_ctx.$($gl_cmd)*;
 
         #[cfg(debug_assertions)]
-        crate::graphics::check_error(&$gl_ctx, &format!("{}:{}: {}", file!(), line!(), stringify!($($gl_cmd)*)));
+        crate::check_error(&$gl_ctx, &format!("{}:{}: {}", file!(), line!(), stringify!($($gl_cmd)*)));
 
         res
     }};
@@ -241,7 +242,7 @@ impl GraphicsContext {
                 label: None,
                 required_features: Features::PUSH_CONSTANTS,
                 required_limits: Limits {
-                    max_push_constant_size: 72,
+                    max_push_constant_size: MAX_PUSH_CONSTANTS_SIZE,
                     ..adapter.limits()
                 },
             },
