@@ -556,23 +556,82 @@ pub enum H264Profile {
     Baseline = 2,
 }
 
-#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub struct ChromaKeyConfig {
+    #[schema(strings(display_name = "Hue start max"), suffix = "°")]
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -179.0, max = 539.0, step = 1.0)))]
+    pub hue_start_max_deg: f32,
+
+    #[schema(strings(display_name = "Hue start min"), suffix = "°")]
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -179.0, max = 539.0, step = 1.0)))]
+    pub hue_start_min_deg: f32,
+
+    #[schema(strings(display_name = "Hue end min"), suffix = "°")]
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -179.0, max = 539.0, step = 1.0)))]
+    pub hue_end_min_deg: f32,
+
+    #[schema(strings(display_name = "Hue end max"), suffix = "°")]
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -179.0, max = 539.0, step = 1.0)))]
+    pub hue_end_max_deg: f32,
+
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -0.5, max = 1.5, step = 0.01)))]
+    pub saturation_start_max: f32,
+
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -0.5, max = 1.5, step = 0.01)))]
+    pub saturation_start_min: f32,
+
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -0.5, max = 1.5, step = 0.01)))]
+    pub saturation_end_min: f32,
+
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -0.5, max = 1.5,step = 0.01)))]
+    pub saturation_end_max: f32,
+
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -0.5, max = 1.5, step = 0.01)))]
+    pub value_start_max: f32,
+
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -0.5, max = 1.5, step = 0.01)))]
+    pub value_start_min: f32,
+
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -0.5, max = 1.5, step = 0.01)))]
+    pub value_end_min: f32,
+
+    #[schema(flag = "real-time")]
+    #[schema(gui(slider(min = -0.5, max = 1.5, step = 0.01)))]
+    pub value_end_max: f32,
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq, Debug)]
 #[schema(gui = "button_group")]
 pub enum PassthroughMode {
     AugmentedReality {
+        #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.0, max = 1.0, step = 0.01)))]
         brightness: f32,
     },
     Blend {
+        #[schema(flag = "real-time")]
         #[schema(gui(slider(min = 0.0, max = 1.0, step = 0.01)))]
         opacity: f32,
     },
+    ChromaKey(#[schema(flag = "real-time")] ChromaKeyConfig),
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
 pub struct VideoConfig {
     #[schema(strings(help = r"Augmented reality: corresponds to premultiplied alpha
 Blend: corresponds to un-premultiplied alpha"))]
+    #[schema(flag = "real-time")]
     pub passthrough: Switch<PassthroughMode>,
 
     pub bitrate: BitrateConfig,
@@ -737,6 +796,7 @@ pub struct FaceTrackingSourcesConfig {
     pub face_tracking_fb: bool,
     pub eye_expressions_htc: bool,
     pub lip_expressions_htc: bool,
+    pub face_tracking_pico: bool,
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
@@ -757,6 +817,7 @@ pub struct FaceTrackingConfig {
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
 pub struct BodyTrackingSourcesConfig {
     pub body_tracking_fb: Switch<BodyTrackingFBConfig>,
+    pub body_tracking_bd: Switch<BodyTrackingBDConfig>,
     // todo:
     // pub detached_controllers_as_feet: bool,
     // unfortunately multimodal is incompatible with body tracking. To make this usable we need to
@@ -766,6 +827,12 @@ pub struct BodyTrackingSourcesConfig {
 #[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
 pub struct BodyTrackingFBConfig {
     pub full_body: bool,
+}
+
+#[derive(SettingsSchema, Serialize, Deserialize, Clone, PartialEq)]
+pub struct BodyTrackingBDConfig {
+    pub high_accuracy: bool,
+    pub prompt_calibration_on_start: bool,
 }
 
 #[derive(SettingsSchema, Serialize, Deserialize, Clone)]
@@ -1422,6 +1489,20 @@ pub fn session_settings_default() -> SettingsDefault {
                     variant: PassthroughModeDefaultVariant::AugmentedReality,
                     AugmentedReality: PassthroughModeAugmentedRealityDefault { brightness: 0.4 },
                     Blend: PassthroughModeBlendDefault { opacity: 0.5 },
+                    ChromaKey: ChromaKeyConfigDefault {
+                        hue_start_max_deg: 70.0,
+                        hue_start_min_deg: 80.0,
+                        hue_end_min_deg: 160.0,
+                        hue_end_max_deg: 170.0,
+                        saturation_start_max: 0.2,
+                        saturation_start_min: 0.3,
+                        saturation_end_min: 1.0,
+                        saturation_end_max: 1.1,
+                        value_start_max: 0.0,
+                        value_start_min: 0.1,
+                        value_end_min: 1.0,
+                        value_end_max: 1.1,
+                    },
                 },
             },
             adapter_index: 0,
@@ -1672,6 +1753,7 @@ pub fn session_settings_default() -> SettingsDefault {
                         face_tracking_fb: true,
                         eye_expressions_htc: true,
                         lip_expressions_htc: true,
+                        face_tracking_pico: true,
                     },
                     sink: FaceTrackingSinkConfigDefault {
                         VrchatEyeOsc: FaceTrackingSinkConfigVrchatEyeOscDefault { port: 9000 },
@@ -1687,6 +1769,13 @@ pub fn session_settings_default() -> SettingsDefault {
                         body_tracking_fb: SwitchDefault {
                             enabled: true,
                             content: BodyTrackingFBConfigDefault { full_body: true },
+                        },
+                        body_tracking_bd: SwitchDefault {
+                            enabled: true,
+                            content: BodyTrackingBDConfigDefault {
+                                high_accuracy: true,
+                                prompt_calibration_on_start: true,
+                            },
                         },
                     },
                     sink: BodyTrackingSinkConfigDefault {
