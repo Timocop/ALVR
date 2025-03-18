@@ -48,9 +48,12 @@ impl Control {
                 )
             })
             .collect();
-
         let control_schema = SchemaNode::Choice {
-            default: schema.options[schema.default_option_index]
+            default: schema
+                .options
+                .iter()
+                .find(|option| option.display_name == schema.default_option_display_name)
+                .unwrap()
                 .display_name
                 .clone(),
             variants: schema
@@ -118,7 +121,7 @@ impl Control {
                     };
                 }
 
-                if *session_ref != desc.value {
+                if !components::json_values_eq(session_ref, &desc.value) {
                     continue 'outer;
                 }
             }

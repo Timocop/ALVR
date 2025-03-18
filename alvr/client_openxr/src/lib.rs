@@ -20,9 +20,9 @@ use alvr_graphics::GraphicsContext;
 use alvr_session::{BodyTrackingBDConfig, BodyTrackingSourcesConfig};
 use alvr_system_info::Platform;
 use extra_extensions::{
-    BD_BODY_TRACKING_EXTENSION_NAME, META_BODY_TRACKING_FULL_BODY_EXTENSION_NAME,
-    META_DETACHED_CONTROLLERS_EXTENSION_NAME,
-    META_SIMULTANEOUS_HANDS_AND_CONTROLLERS_EXTENSION_NAME,
+    BD_BODY_TRACKING_EXTENSION_NAME, BD_MOTION_TRACKING_EXTENSION_NAME,
+    META_BODY_TRACKING_FULL_BODY_EXTENSION_NAME, META_DETACHED_CONTROLLERS_EXTENSION_NAME,
+    META_SIMULTANEOUS_HANDS_AND_CONTROLLERS_EXTENSION_NAME, PICO_CONFIGURATION_EXTENSION_NAME,
 };
 use interaction::{InteractionContext, InteractionSourcesConfig};
 use lobby::Lobby;
@@ -145,7 +145,7 @@ pub fn entry_point() {
         | Platform::Pico4
         | Platform::Pico4Pro
         | Platform::Pico4Enterprise => "_pico_old",
-        Platform::Yvr => "_yvr",
+        p if p.is_yvr() => "_yvr",
         Platform::Lynx => "_lynx",
         _ => "",
     };
@@ -195,6 +195,8 @@ pub fn entry_point() {
                 META_SIMULTANEOUS_HANDS_AND_CONTROLLERS_EXTENSION_NAME,
                 META_DETACHED_CONTROLLERS_EXTENSION_NAME,
                 BD_BODY_TRACKING_EXTENSION_NAME,
+                BD_MOTION_TRACKING_EXTENSION_NAME,
+                PICO_CONFIGURATION_EXTENSION_NAME,
             ]
             .contains(&ext.as_str())
         })
@@ -253,7 +255,9 @@ pub fn entry_point() {
         };
 
         if exts.fb_color_space {
-            xr_session.set_color_space(xr::ColorSpaceFB::P3).unwrap();
+            xr_session
+                .set_color_space(xr::ColorSpaceFB::REC709)
+                .unwrap();
         }
 
         let capabilities = ClientCapabilities {
@@ -290,7 +294,7 @@ pub fn entry_point() {
         );
         let lobby_body_tracking_config = BodyTrackingSourcesConfig {
             body_tracking_fb: Switch::Disabled,
-            body_tracking_bd: Switch::Enabled(BodyTrackingBDConfig {
+            body_tracking_bd: Switch::Enabled(BodyTrackingBDConfig::BodyTracking {
                 high_accuracy: true,
                 prompt_calibration_on_start: false,
             }),
@@ -324,7 +328,7 @@ pub fn entry_point() {
 
                             core_context.resume();
 
-                            passthrough_layer = PassthroughLayer::new(&xr_session).ok();
+                            passthrough_layer = PassthroughLayer::new(&xr_session, platform).ok();
 
                             session_running = true;
                         }
@@ -403,7 +407,7 @@ pub fn entry_point() {
                     }
                     ClientCoreEvent::StreamingStopped => {
                         if passthrough_layer.is_none() {
-                            passthrough_layer = PassthroughLayer::new(&xr_session).ok();
+                            passthrough_layer = PassthroughLayer::new(&xr_session, platform).ok();
                         }
 
                         interaction_context
@@ -440,7 +444,7 @@ pub fn entry_point() {
                     }
                     ClientCoreEvent::RealTimeConfig(config) => {
                         if config.passthrough.is_some() && passthrough_layer.is_none() {
-                            passthrough_layer = PassthroughLayer::new(&xr_session).ok();
+                            passthrough_layer = PassthroughLayer::new(&xr_session, platform).ok();
                         } else if config.passthrough.is_none() && passthrough_layer.is_some() {
                             passthrough_layer = None;
                         }

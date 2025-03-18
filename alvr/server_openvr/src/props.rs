@@ -17,11 +17,11 @@ use alvr_session::{
     ControllersEmulationMode, HeadsetEmulationMode, OpenvrPropKey, OpenvrPropType, OpenvrProperty,
 };
 use std::{
-    ffi::{c_char, CString},
+    ffi::{c_char, c_void, CString},
     ptr,
 };
 
-pub fn set_openvr_prop(device_id: u64, prop: OpenvrProperty) {
+pub fn set_openvr_prop(instance_ptr: Option<*mut c_void>, device_id: u64, prop: OpenvrProperty) {
     let key = prop.key as u32;
     let ty = alvr_session::openvr_prop_key_to_type(prop.key);
     let value = prop.value.clone();
@@ -102,15 +102,16 @@ pub fn set_openvr_prop(device_id: u64, prop: OpenvrProperty) {
 
     debug!("Setting {device_name} OpenVR prop: {:?}={value}", prop.key);
 
-    unsafe {
-        crate::SetOpenvrProperty(
-            device_id,
-            FfiOpenvrProperty {
-                key,
-                type_,
-                value: ffi_value,
-            },
-        );
+    let ffi_prop = FfiOpenvrProperty {
+        key,
+        type_,
+        value: ffi_value,
+    };
+
+    if let Some(instance_ptr) = instance_ptr {
+        unsafe { crate::SetOpenvrProperty(instance_ptr, ffi_prop) }
+    } else {
+        unsafe { crate::SetOpenvrPropByDeviceID(device_id, ffi_prop) }
     }
 }
 
@@ -132,6 +133,7 @@ fn serial_number(device_id: u64) -> String {
                 ControllersEmulationMode::Quest3Plus => "2G0YXX0X0000XX_Controller", // 2G0YY Left 2G0YZ Right
                 ControllersEmulationMode::QuestPro => "230YXXXXXXXXXX_Controller", // 230YT left, 230YV right
                 ControllersEmulationMode::RiftSTouch
+                | ControllersEmulationMode::Pico4
                 | ControllersEmulationMode::ValveIndex
                 | ControllersEmulationMode::ViveWand
                 | ControllersEmulationMode::ViveTracker => "ALVR Remote Controller",
@@ -187,13 +189,14 @@ pub extern "C" fn get_serial_number(device_id: u64, out_str: *mut c_char) -> u64
 }
 
 #[no_mangle]
-pub extern "C" fn set_device_openvr_props(device_id: u64) {
+pub extern "C" fn set_device_openvr_props(instance_ptr: *mut c_void, device_id: u64) {
     use OpenvrPropKey::*;
 
     let settings = alvr_server_core::settings();
 
     let set_prop = |key, value: &str| {
         set_openvr_prop(
+            Some(instance_ptr),
             device_id,
             OpenvrProperty {
                 key,
@@ -392,6 +395,30 @@ pub extern "C" fn set_device_openvr_props(device_id: u64) {
                         set_prop(RenderModelNameString, "oculus_quest_pro_controller_right");
                     }
                     set_oculus_common_props();
+                }
+                ControllersEmulationMode::Pico4 => {
+                    set_prop(TrackingSystemNameString, "vrlink");
+                    set_prop(ManufacturerNameString, "ByteDance");
+                    if left_hand {
+                        set_prop(ModelNumberString, "PICO 4 (Left Controller)");
+                        set_prop(
+                            RenderModelNameString,
+                            "{vrlink}/rendermodels/pico_4_controller_left",
+                        );
+                        set_icons("{vrlink}/icons/left_pico4");
+                    } else if right_hand {
+                        set_prop(ModelNumberString, "PICO 4 (Right Controller)");
+                        set_prop(
+                            RenderModelNameString,
+                            "{vrlink}/rendermodels/pico_4_controller_right",
+                        );
+                        set_icons("{vrlink}/icons/right_pico4");
+                    }
+                    set_prop(ControllerTypeString, "pico_controller");
+                    set_prop(
+                        InputProfilePathString,
+                        "{vrlink}/input/pico_controller_profile.json",
+                    );
                 }
                 ControllersEmulationMode::ValveIndex => {
                     set_prop(TrackingSystemNameString, "indexcontroller");
